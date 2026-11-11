@@ -197,13 +197,13 @@ async function openDashboard(user) {
       ? roleDocument.data().role
       : "student";
 
-    if (role === "admin") {
-      destination = "./admin.html";
-    } else if (role === "student") {
-      destination = "./student.html";
-    } else {
-      throw new Error("Invalid account role.");
-    }
+  if (role === "admin") {
+  destination = "./adminfiles/admin.html";
+} else if (role === "student") {
+  destination = "./student.html";
+} else {
+  throw new Error("Invalid account role.");
+}
   } catch (error) {
     await signOut(auth);
 
