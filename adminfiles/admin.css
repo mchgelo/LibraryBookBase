@@ -708,3 +708,47 @@ textarea {
     transition: none !important;
   }
 }
+/* Loading bar at the top */
+#page-loader {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 9999;
+  height: 3px;
+  overflow: hidden;
+  background: #dbeafe;
+}
+
+#page-loader span {
+  display: block;
+  width: 35%;
+  height: 100%;
+  background: #2563eb;
+  animation: admin-loading 1.1s ease-in-out infinite;
+}
+
+/* Hide when the dashboard is ready */
+body:has(#app:not([hidden])) #page-loader {
+  display: none;
+}
+
+/* Hide when an account error appears */
+body:has(#loading:not([hidden]):not(:empty)) #page-loader {
+  display: none;
+}
+
+@keyframes admin-loading {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(390%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #page-loader span {
+    width: 100%;
+    animation: none;
+  }
+}

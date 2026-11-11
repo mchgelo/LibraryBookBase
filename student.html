@@ -11,6 +11,9 @@
 </head>
 
 <body>
+  <div id="page-loader" role="status" aria-label="Loading your dashboard">
+  <span></span>
+</div>
   <svg class="icon-definitions"
        xmlns="http://www.w3.org/2000/svg"
        aria-hidden="true">
@@ -71,9 +74,7 @@
     </symbol>
   </svg>
 
-  <p id="loading" class="empty" role="status">
-    Checking your account...
-  </p>
+  <p id="loading" class="empty" role="status" hidden></p>
 
   <div id="app" hidden>
     <div class="shade" id="shade" hidden></div>
@@ -88,7 +89,7 @@
         BookBase
       </div>
 
-      <p class="nav-label">YOUR WORKSPACE</p>
+      <p class="nav-label">MAIN</p>
 
       <nav aria-label="Main navigation">
         <button class="nav-button active"
@@ -97,35 +98,35 @@
           <svg class="icon" aria-hidden="true">
             <use href="#i-home"/>
           </svg>
-          DISCOVER
+          Discover
         </button>
 
         <button class="nav-button" data-view="category">
           <svg class="icon" aria-hidden="true">
             <use href="#i-grid"/>
           </svg>
-          CATEGORY
+          Category
         </button>
 
         <button class="nav-button" data-view="library">
           <svg class="icon" aria-hidden="true">
             <use href="#i-book"/>
           </svg>
-          MY BORROWED BOOKS
+          My Borrowed Books
         </button>
 
         <button class="nav-button" data-view="history">
           <svg class="icon" aria-hidden="true">
             <use href="#i-history"/>
           </svg>
-          BORROWING HISTORY
+       Borrowing History
         </button>
 
         <button class="nav-button" data-view="favourite">
           <svg class="icon" aria-hidden="true">
             <use href="#i-heart"/>
           </svg>
-          FAVOURITE
+          Favourite Books
         </button>
       </nav>
 
@@ -136,21 +137,21 @@
           <svg class="icon" aria-hidden="true">
             <use href="#i-settings"/>
           </svg>
-          SETTINGS
+          Settings
         </button>
 
         <button class="nav-button" data-view="support">
           <svg class="icon" aria-hidden="true">
             <use href="#i-help"/>
           </svg>
-          SUPPORT
+          Support
         </button>
 
         <button class="nav-button logout-button" data-logout>
           <svg class="icon" aria-hidden="true">
             <use href="#i-logout"/>
           </svg>
-          LOGOUT
+          Logout
         </button>
       </div>
     </aside>
@@ -232,7 +233,7 @@
         <div class="greeting">
           <div>
             <p class="eyebrow">STUDENT LIBRARY</p>
-            <h1 id="page-title">Book catalogue</h1>
+            <h1 id="page-title">Book Catalogue</h1>
             <p id="page-description">
               Check availability and request a book from your library.
             </p>

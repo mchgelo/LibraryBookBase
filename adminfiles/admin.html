@@ -11,6 +11,9 @@
 </head>
 
 <body>
+  <div id="page-loader" role="status" aria-label="Loading dashboard">
+  <span></span>
+</div>
   <svg class="icon-definitions"
        xmlns="http://www.w3.org/2000/svg"
        aria-hidden="true">
@@ -51,9 +54,7 @@
     </symbol>
   </svg>
 
-  <p id="loading" class="loading" role="status">
-    Checking admin account...
-  </p>
+  <<p id="loading" class="loading" role="status" hidden></p>
 
   <div id="app" hidden>
     <div id="shade" class="shade" hidden></div>

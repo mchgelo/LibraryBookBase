@@ -877,9 +877,8 @@ onAuthStateChanged(auth, async (user) => {
   requestsError = "";
 
   $("app").hidden = true;
-  $("loading").hidden = false;
-  $("loading").textContent = "Checking admin account...";
-
+$("loading").hidden = true;
+$("loading").textContent = "";
   if (!user || !user.emailVerified) {
     window.location.replace("./login.html");
     return;
@@ -975,10 +974,12 @@ onAuthStateChanged(auth, async (user) => {
       }
     );
   } catch (error) {
-    if (session !== version) return;
+  if (session !== version) return;
 
-    $("loading").textContent = error.code
-      ? `Unable to verify admin (${error.code}). Check your connection and Firestore Rules.`
-      : error.message;
-  }
+  $("loading").hidden = false;
+
+  $("loading").textContent = error.code
+    ? `Unable to verify admin (${error.code}). Check your connection and Firestore Rules.`
+    : error.message;
+}
 });

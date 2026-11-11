@@ -890,6 +890,9 @@ $("today").textContent = new Intl.DateTimeFormat("en-PH", {
 }).format(new Date());
 
 onAuthStateChanged(auth, async (user) => {
+    $("app").hidden = true;
+$("loading").hidden = true;
+$("loading").textContent = "";
   const version = ++sessionVersion;
 
   stopBooks?.();
@@ -907,8 +910,8 @@ onAuthStateChanged(auth, async (user) => {
   sending.clear();
 
   $("app").hidden = true;
-  $("loading").hidden = false;
-  $("loading").textContent = "Checking your account...";
+  $("loading").hidden = true;
+$("loading").textContent = "";
 
   if (!user || !user.emailVerified) {
     window.location.replace("./login.html");
