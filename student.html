@@ -6,14 +6,15 @@
 
   <title>BookBase | Student Library</title>
 
-  <link rel="stylesheet" href="student.css">
-  <script type="module" src="student.js"></script>
+  <link rel="stylesheet" href="./student.css">
+  <script type="module" src="./student.js?v=student-clock-1"></script>
 </head>
 
 <body>
-  <div id="page-loader" role="status" aria-label="Loading your dashboard">
-  <span></span>
-</div>
+  <div id="page-loader" role="status" aria-label="Loading dashboard">
+    <span></span>
+  </div>
+
   <svg class="icon-definitions"
        xmlns="http://www.w3.org/2000/svg"
        aria-hidden="true">
@@ -119,7 +120,7 @@
           <svg class="icon" aria-hidden="true">
             <use href="#i-history"/>
           </svg>
-       Borrowing History
+          Borrowing History
         </button>
 
         <button class="nav-button" data-view="favourite">
@@ -205,7 +206,7 @@
                     aria-controls="profile"
                     aria-expanded="false"
                     aria-label="Open profile">
-              <span class="avatar" id="avatar">S</span>
+              <span class="avatar" id="avatar" aria-hidden="true">S</span>
 
               <span class="user-summary">
                 <strong id="header-name">Student</strong>
@@ -222,8 +223,13 @@
               <p id="profile-email"></p>
               <p>Student · Email verified</p>
 
-              <button data-view="settings">Profile details</button>
-              <button data-logout>Logout</button>
+              <button type="button" data-view="settings">
+                Profile details
+              </button>
+
+              <button type="button" data-logout>
+                Logout
+              </button>
             </div>
           </div>
         </div>
@@ -234,12 +240,18 @@
           <div>
             <p class="eyebrow">STUDENT LIBRARY</p>
             <h1 id="page-title">Book Catalogue</h1>
+
             <p id="page-description">
               Check availability and request a book from your library.
             </p>
           </div>
 
-          <span class="date-label" id="today"></span>
+          <time class="dashboard-clock"
+                id="today"
+                aria-label="Current Philippine date and time">
+            <span id="clock-date" class="clock-date"></span>
+            <span id="clock-time" class="clock-time"></span>
+          </time>
         </div>
 
         <section class="panel" aria-labelledby="section-title">

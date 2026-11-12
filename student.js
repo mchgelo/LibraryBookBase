@@ -21,89 +21,33 @@ import {
 } from
   "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
 
-const firebaseConfig = {
+// Firebase
+const app = initializeApp({
   apiKey: "AIzaSyAI-ZTiaClMvISqvG5KIJW8rA_YQ0rukbw",
   authDomain: "library-db9da.firebaseapp.com",
   projectId: "library-db9da",
   storageBucket: "library-db9da.firebasestorage.app",
   messagingSenderId: "938072556708",
-  appId: "1:938072556708:web:39370090740ce6125a9231",
-  measurementId: "G-9W3G6V3WF2"
-};
+  appId: "1:938072556708:web:39370090740ce6125a9231"
+});
 
-const firebaseApp = initializeApp(firebaseConfig);
-const auth = getAuth(firebaseApp);
-const db = getFirestore(firebaseApp);
-
+const auth = getAuth(app);
+const db = getFirestore(app);
 const $ = (id) => document.getElementById(id);
 
-// Display examples. Actual availability comes from Firestore.
+// Display books. Available copies come from Firestore.
 const sampleBooks = [
-  {
-    id: "money",
-    title: "The Psychology of Money",
-    author: "Morgan Housel",
-    category: "Finance",
-    color: "#789483",
-    ink: "#ffffff"
-  },
-  {
-    id: "innovation",
-    title: "How Innovation Works",
-    author: "Matt Ridley",
-    category: "Science",
-    color: "#f5d52c",
-    ink: "#263b42"
-  },
-  {
-    id: "company",
-    title: "Company of One",
-    author: "Paul Jarvis",
-    category: "Business",
-    color: "#e9eae3",
-    ink: "#303a42"
-  },
-  {
-    id: "habits",
-    title: "Atomic Habits",
-    author: "James Clear",
-    category: "Self-development",
-    color: "#e6d8c0",
-    ink: "#554334"
-  },
-  {
-    id: "alchemist",
-    title: "The Alchemist",
-    author: "Paulo Coelho",
-    category: "Fiction",
-    color: "#b76342",
-    ink: "#fff3d8"
-  },
-  {
-    id: "brief",
-    title: "A Brief History of Time",
-    author: "Stephen Hawking",
-    category: "Science",
-    color: "#263c60",
-    ink: "#e7efff"
-  },
-  {
-    id: "deep",
-    title: "Deep Work",
-    author: "Cal Newport",
-    category: "Self-development",
-    color: "#cc6c53",
-    ink: "#fff7ed"
-  },
-  {
-    id: "little",
-    title: "The Little Prince",
-    author: "Antoine de Saint-Exupéry",
-    category: "Fiction",
-    color: "#9fbfc9",
-    ink: "#203c50"
-  }
-];
+  ["money", "The Psychology of Money", "Morgan Housel", "Finance", "#789483", "#ffffff"],
+  ["innovation", "How Innovation Works", "Matt Ridley", "Science", "#f5d52c", "#263b42"],
+  ["company", "Company of One", "Paul Jarvis", "Business", "#e9eae3", "#303a42"],
+  ["habits", "Atomic Habits", "James Clear", "Self-development", "#e6d8c0", "#554334"],
+  ["alchemist", "The Alchemist", "Paulo Coelho", "Fiction", "#b76342", "#fff3d8"],
+  ["brief", "A Brief History of Time", "Stephen Hawking", "Science", "#263c60", "#e7efff"],
+  ["deep", "Deep Work", "Cal Newport", "Self-development", "#cc6c53", "#fff7ed"],
+  ["little", "The Little Prince", "Antoine de Saint-Exupéry", "Fiction", "#9fbfc9", "#203c50"]
+].map(([id, title, author, category, color, ink]) => ({
+  id, title, author, category, color, ink
+}));
 
 const views = {
   discover: [
@@ -118,7 +62,7 @@ const views = {
   ],
   library: [
     "My borrowed books",
-    "Track your pending requests and approved loans.",
+    "Track pending requests and approved loans.",
     "Current borrowing"
   ],
   history: [
@@ -143,13 +87,13 @@ const views = {
   ]
 };
 
+// State
 let currentUser = null;
 let currentView = "discover";
 let selectedCategory = "All";
 
 let favourites = new Set();
 let storageKey = "";
-
 let liveBooks = new Map();
 let requests = [];
 
@@ -162,15 +106,22 @@ let stopBooks = null;
 let stopRequests = null;
 let sessionVersion = 0;
 
+let toastTimer = null;
+let activeDialog = null;
+let loggingOut = false;
+
 const sending = new Set();
 
-function element(tag, className, text) {
-  const node = document.createElement(tag);
+// Helpers
+function element(tag, className = "", text) {
+  const item = document.createElement(tag);
+  item.className = className;
 
-  if (className) node.className = className;
-  if (text !== undefined) node.textContent = text;
+  if (text !== undefined) {
+    item.textContent = text;
+  }
 
-  return node;
+  return item;
 }
 
 function createIcon(name) {
@@ -180,49 +131,64 @@ function createIcon(name) {
 
   svg.classList.add("icon");
   svg.setAttribute("aria-hidden", "true");
-  use.setAttribute("href", `#i-${name}`);
 
+  use.setAttribute("href", `#i-${name}`);
   svg.append(use);
+
   return svg;
 }
 
 function catalogueBooks() {
-  const merged = new Map(
+  const result = new Map(
     sampleBooks.map((book) => [book.id, { ...book }])
   );
 
   liveBooks.forEach((data, id) => {
-    merged.set(id, {
+    const previous = result.get(id);
+
+    result.set(id, {
       color: "#738baa",
       ink: "#ffffff",
-      ...merged.get(id),
+      ...previous,
       ...data,
       id,
-      title: data.title || merged.get(id)?.title || id,
-      author: data.author || merged.get(id)?.author || "Unknown author",
-      category: data.category || merged.get(id)?.category || "General"
+      title: data.title || previous?.title || id,
+      author: data.author || previous?.author || "Unknown author",
+      category: data.category || previous?.category || "General"
     });
   });
 
-  return [...merged.values()];
+  return [...result.values()];
 }
 
 function bookTitle(id) {
   return catalogueBooks().find((book) => book.id === id)?.title || id;
 }
 
-function formatDate(value) {
-  if (!value?.toDate) return "Processing...";
+// Actual Firestore timestamp, displayed in Philippine time.
+function formatDate(value, includeTime = true) {
+  if (!value?.toDate) return "Awaiting server timestamp";
 
-  return new Intl.DateTimeFormat("en-PH", {
+  const options = {
     dateStyle: "medium",
     timeZone: "Asia/Manila"
-  }).format(value.toDate());
+  };
+
+  if (includeTime) {
+    options.timeStyle = "medium";
+    options.hour12 = true;
+  }
+
+  return new Intl.DateTimeFormat("en-PH", options)
+    .format(value.toDate()) + (includeTime ? " PHT" : "");
 }
 
 function closeDropdowns() {
   document.querySelectorAll("[data-dropdown]").forEach((button) => {
-    $(button.dataset.dropdown).hidden = true;
+    const panel = $(button.dataset.dropdown);
+
+    if (panel) panel.hidden = true;
+
     button.setAttribute("aria-expanded", "false");
   });
 }
@@ -233,12 +199,318 @@ function closeSidebar() {
   $("menu-button").setAttribute("aria-expanded", "false");
 }
 
+// Toast notifications
+function studentMessage(text, error = false, kind = "success") {
+  clearTimeout(toastTimer);
+  $("student-toast")?.remove();
+  $("status").textContent = "";
+
+  if (!text) return;
+
+  const type = error
+    ? "error"
+    : kind === "info"
+      ? "info"
+      : "success";
+
+  const labels = {
+    success: "Successful",
+    error: "Action failed",
+    info: "Notice"
+  };
+
+  const symbols = {
+    success: "✓",
+    error: "!",
+    info: "i"
+  };
+
+  const toast = element("div", `student-toast ${type}`);
+  toast.id = "student-toast";
+
+  const icon = element(
+    "span",
+    "student-toast-icon",
+    symbols[type]
+  );
+
+  icon.setAttribute("aria-hidden", "true");
+
+  const content = element("div", "student-toast-content");
+  content.setAttribute("role", error ? "alert" : "status");
+  content.setAttribute("aria-atomic", "true");
+
+  content.append(
+    element("strong", "", labels[type]),
+    element("p", "", text)
+  );
+
+  const close = element(
+    "button",
+    "student-toast-close",
+    "×"
+  );
+
+  close.type = "button";
+  close.setAttribute("aria-label", "Dismiss notification");
+
+  close.addEventListener("click", () => {
+    clearTimeout(toastTimer);
+    toast.remove();
+  });
+
+  toast.append(icon, content, close);
+  document.body.append(toast);
+
+  function dismissLater() {
+    clearTimeout(toastTimer);
+
+    if (type !== "success") return;
+
+    toastTimer = setTimeout(() => {
+      if (
+        toast.isConnected &&
+        !toast.matches(":hover, :focus-within")
+      ) {
+        toast.remove();
+      }
+    }, 6000);
+  }
+
+  toast.addEventListener("pointerenter", () => {
+    clearTimeout(toastTimer);
+  });
+
+  toast.addEventListener("focusin", () => {
+    clearTimeout(toastTimer);
+  });
+
+  toast.addEventListener("pointerleave", dismissLater);
+  toast.addEventListener("focusout", dismissLater);
+
+  dismissLater();
+}
+
+// Confirmation dialog
+function confirmAction(
+  title,
+  description,
+  yesLabel,
+  book = null,
+  danger = false
+) {
+  if (activeDialog?.open) {
+    return Promise.resolve(false);
+  }
+
+  closeDropdowns();
+
+  const dialog = element("dialog", "student-dialog");
+  activeDialog = dialog;
+
+  dialog.setAttribute(
+    "aria-labelledby",
+    "student-confirm-title"
+  );
+
+  dialog.setAttribute(
+    "aria-describedby",
+    "student-confirm-description"
+  );
+
+  const form = element("form");
+  form.method = "dialog";
+
+  const heading = element("h2", "", title);
+  heading.id = "student-confirm-title";
+  form.append(heading);
+
+  if (book) {
+    const summary = element("div", "borrow-confirm-summary");
+
+    summary.append(
+      element("strong", "", book.title),
+      element("p", "", book.author)
+    );
+
+    form.append(summary);
+  }
+
+  const explanation = element("p", "", description);
+  explanation.id = "student-confirm-description";
+
+  const actions = element(
+    "div",
+    "student-dialog-actions"
+  );
+
+  const cancel = element(
+    "button",
+    "student-stay",
+    danger ? "No, stay" : "No, go back"
+  );
+
+  cancel.type = "submit";
+  cancel.value = "cancel";
+  cancel.autofocus = true;
+
+  const yes = element(
+    "button",
+    danger ? "student-confirm-logout" : "student-confirm-borrow",
+    yesLabel
+  );
+
+  yes.type = "submit";
+  yes.value = "confirm";
+
+  actions.append(cancel, yes);
+  form.append(explanation, actions);
+  dialog.append(form);
+
+  return new Promise((resolve) => {
+    dialog.addEventListener("close", () => {
+      const confirmed = dialog.returnValue === "confirm";
+
+      dialog.remove();
+
+      if (activeDialog === dialog) {
+        activeDialog = null;
+      }
+
+      resolve(confirmed);
+    }, { once: true });
+
+    document.body.append(dialog);
+    dialog.showModal();
+  });
+}
+
+// Profile
+function paintAvatar(target, user) {
+  if (!target) return;
+
+  const name = user.displayName || user.email || "Student";
+
+  target.textContent = name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => Array.from(part)[0])
+    .join("")
+    .toUpperCase();
+
+  if (!user.photoURL) return;
+
+  try {
+    const url = new URL(user.photoURL);
+    if (url.protocol !== "https:") return;
+
+    const image = element("img");
+    image.src = url.href;
+    image.alt = "";
+    image.referrerPolicy = "no-referrer";
+    image.addEventListener("error", () => image.remove());
+
+    target.append(image);
+  } catch {
+    // Keep initials if a profile photo is unavailable.
+  }
+}
+
+function fillProfile(user) {
+  const name = user.displayName || user.email || "Student";
+
+  $("header-name").textContent = name;
+  $("profile-name").textContent = name;
+  $("profile-email").textContent = user.email || "";
+
+  paintAvatar($("avatar"), user);
+
+  let avatar = $("student-profile-avatar");
+
+  if (!avatar) {
+    avatar = element(
+      "span",
+      "avatar student-profile-avatar"
+    );
+
+    avatar.id = "student-profile-avatar";
+    avatar.setAttribute("aria-hidden", "true");
+
+    $("profile").prepend(avatar);
+  }
+
+  paintAvatar(avatar, user);
+}
+
+function profileLines() {
+  return [
+    `Name: ${currentUser.displayName || "Student"}`,
+    `Email: ${currentUser.email || "Not provided"}`,
+    "Account type: Student",
+    "Email status: Verified",
+    `User ID: ${currentUser.uid}`
+  ];
+}
+
+function showProfile() {
+  if (!currentUser || activeDialog?.open) return;
+
+  closeDropdowns();
+
+  const dialog = element("dialog", "student-dialog");
+  activeDialog = dialog;
+
+  const heading = element("h2", "", "Profile details");
+  heading.id = "student-profile-title";
+
+  dialog.setAttribute(
+    "aria-labelledby",
+    "student-profile-title"
+  );
+
+  dialog.append(heading);
+
+  profileLines().forEach((line) => {
+    dialog.append(element("p", "", line));
+  });
+
+  const form = element("form");
+  form.method = "dialog";
+
+  const actions = element(
+    "div",
+    "student-dialog-actions"
+  );
+
+  const close = element("button", "student-stay", "Close");
+  close.autofocus = true;
+
+  actions.append(close);
+  form.append(actions);
+  dialog.append(form);
+
+  dialog.addEventListener("close", () => {
+    dialog.remove();
+
+    if (activeDialog === dialog) {
+      activeDialog = null;
+    }
+  }, { once: true });
+
+  document.body.append(dialog);
+  dialog.showModal();
+}
+
+// Live Firestore data
 function refreshDataViews() {
   if (!currentUser) return;
 
   if (["library", "history"].includes(currentView)) {
     renderBorrowing();
-  } else if (["discover", "category", "favourite"].includes(currentView)) {
+  } else if (
+    ["discover", "category", "favourite"].includes(currentView)
+  ) {
     renderCategories();
     renderBooks();
   }
@@ -249,7 +521,6 @@ function refreshDataViews() {
 function startDataListeners(user, version) {
   stopBooks = onSnapshot(
     collection(db, "books"),
-
     (snapshot) => {
       if (version !== sessionVersion) return;
 
@@ -262,7 +533,6 @@ function startDataListeners(user, version) {
 
       refreshDataViews();
     },
-
     (error) => {
       if (version !== sessionVersion) return;
 
@@ -280,7 +550,6 @@ function startDataListeners(user, version) {
 
   stopRequests = onSnapshot(
     studentRequests,
-
     (snapshot) => {
       if (version !== sessionVersion) return;
 
@@ -300,7 +569,6 @@ function startDataListeners(user, version) {
 
       refreshDataViews();
     },
-
     (error) => {
       if (version !== sessionVersion) return;
 
@@ -312,6 +580,7 @@ function startDataListeners(user, version) {
   );
 }
 
+// Favourites
 function updateFavouriteButton(button, book) {
   const saved = favourites.has(book.id);
 
@@ -339,9 +608,11 @@ function toggleFavourite(book, button) {
     localStorage.setItem(storageKey, JSON.stringify([...next]));
     favourites = next;
 
-    $("status").textContent = next.has(book.id)
-      ? `${book.title} added to favourites.`
-      : `${book.title} removed from favourites.`;
+    studentMessage(
+      next.has(book.id)
+        ? `${book.title} added to favourites.`
+        : `${book.title} removed from favourites.`
+    );
 
     if (currentView === "favourite") {
       renderBooks();
@@ -349,23 +620,26 @@ function toggleFavourite(book, button) {
       updateFavouriteButton(button, book);
     }
   } catch {
-    $("status").textContent =
-      "Unable to save favourites. Check your browser storage settings.";
+    studentMessage(
+      "Unable to save favourites. Check browser storage settings.",
+      true
+    );
   }
 }
 
+// Availability and borrow request
 function createBorrowingActions(book) {
   const wrapper = element("div");
   const note = element("p", "availability-text");
   const controls = element("div", "book-actions");
 
-  const checkButton = element("button", "", "View Availability");
-  checkButton.type = "button";
+  const check = element("button", "", "View Availability");
+  check.type = "button";
 
-  const borrowButton = element("button", "borrow-button", "Borrow Book");
-  borrowButton.type = "button";
+  const borrow = element("button", "borrow-button", "Borrow Book");
+  borrow.type = "button";
 
-  const activeRequest = requests.find(
+  const active = requests.find(
     (request) =>
       request.bookId === book.id &&
       ["pending", "approved"].includes(request.status)
@@ -388,15 +662,15 @@ function createBorrowingActions(book) {
   }
 
   if (sending.has(book.id)) {
-    borrowButton.textContent = "Sending request...";
-  } else if (activeRequest) {
-    borrowButton.textContent = activeRequest.status === "pending"
+    borrow.textContent = "Request in progress...";
+  } else if (active) {
+    borrow.textContent = active.status === "pending"
       ? "Pending approval"
       : "Already borrowed";
   }
 
-  borrowButton.disabled =
-    Boolean(activeRequest) ||
+  borrow.disabled =
+    Boolean(active) ||
     sending.has(book.id) ||
     !catalogueReady ||
     !requestsReady ||
@@ -404,52 +678,99 @@ function createBorrowingActions(book) {
     Boolean(requestsError) ||
     !available;
 
-  checkButton.addEventListener("click", async () => {
-    checkButton.disabled = true;
+  check.addEventListener("click", async () => {
+    const version = sessionVersion;
+
+    check.disabled = true;
     note.textContent = "Checking availability...";
 
     try {
-      const snapshot = await getDoc(doc(db, "books", book.id));
+      const snapshot = await getDoc(
+        doc(db, "books", book.id)
+      );
+
+      if (version !== sessionVersion) return;
+
       const count = snapshot.data()?.availableCopies;
+      let text;
 
       if (!snapshot.exists()) {
-        note.textContent = "Not listed for borrowing yet.";
+        text = "Not listed for borrowing yet.";
       } else if (!Number.isInteger(count) || count < 0) {
-        note.textContent = "Availability needs updating.";
+        text = "Availability needs updating.";
       } else if (count === 0) {
-        note.textContent = "Book not available. Select another book.";
+        text = "Book not available. Select another book.";
       } else {
-        note.textContent =
+        text =
           `${count} available copies. Admin approval required.`;
       }
+
+      note.textContent = text;
+      studentMessage(text, false, "info");
     } catch {
-      note.textContent = "Unable to check availability. Try again.";
+      if (version === sessionVersion) {
+        note.textContent = "Unable to check availability.";
+
+        studentMessage(
+          "Unable to check availability. Try again.",
+          true
+        );
+      }
     } finally {
-      checkButton.disabled = false;
+      check.disabled = false;
     }
   });
 
-  borrowButton.addEventListener("click", async () => {
-    if (!currentUser || sending.has(book.id)) return;
+  borrow.addEventListener("click", async () => {
+    if (
+      !currentUser ||
+      sending.has(book.id) ||
+      activeDialog?.open
+    ) {
+      return;
+    }
 
     const user = currentUser;
     const version = sessionVersion;
 
-    // Every borrowing attempt has a unique record for history.
-    const requestRef = doc(collection(db, "borrowRequests"));
-
-    // One active request per student and book.
-    const lockRef = doc(
-      db,
-      "borrowLocks",
-      `${user.uid}_${book.id}`
-    );
-
     sending.add(book.id);
-    borrowButton.disabled = true;
-    borrowButton.textContent = "Sending request...";
+    borrow.disabled = true;
+    borrow.textContent = "Confirming selection...";
 
     try {
+      const confirmed = await confirmAction(
+        "Request this book?",
+        "Your request needs admin approval before a copy is issued.",
+        "Yes, request book",
+        book
+      );
+
+      if (
+        !confirmed ||
+        version !== sessionVersion ||
+        auth.currentUser?.uid !== user.uid
+      ) {
+        return;
+      }
+
+      borrow.textContent = "Sending request...";
+
+      studentMessage(
+        "Sending your borrow request...",
+        false,
+        "info"
+      );
+
+      const requestRef = doc(
+        collection(db, "borrowRequests")
+      );
+
+      const lockRef = doc(
+        db,
+        "borrowLocks",
+        `${user.uid}_${book.id}`
+      );
+
       await runTransaction(db, async (transaction) => {
         const bookSnapshot = await transaction.get(
           doc(db, "books", book.id)
@@ -489,40 +810,43 @@ function createBorrowingActions(book) {
       });
 
       if (version === sessionVersion) {
-        $("status").textContent =
-          `Request sent for ${book.title}. ` +
-          "Waiting for admin approval. No copy has been issued yet.";
+        studentMessage(
+          `Request for “${book.title}” sent successfully. Waiting for admin approval.`
+        );
       }
     } catch (error) {
       if (version === sessionVersion) {
-        $("status").textContent = error.code
-          ? `Unable to send request (${error.code}). Check your connection and Firestore Rules.`
-          : error.message;
+        studentMessage(
+          error.code
+            ? `Unable to send request (${error.code}). Check your connection and try again.`
+            : error.message,
+          true
+        );
       }
     } finally {
-      sending.delete(book.id);
-
       if (version === sessionVersion) {
+        sending.delete(book.id);
         refreshDataViews();
       }
     }
   });
 
-  controls.append(checkButton, borrowButton);
+  controls.append(check, borrow);
   wrapper.append(note, controls);
 
   return wrapper;
 }
 
+// Book catalogue
 function renderBooks() {
   const grid = $("book-grid");
   grid.replaceChildren();
 
-  const searchText = $("search").value.trim().toLowerCase();
+  const text = $("search").value.trim().toLowerCase();
 
-  const filtered = catalogueBooks().filter((book) => {
+  const rows = catalogueBooks().filter((book) => {
     const matchesSearch =
-      `${book.title} ${book.author}`.toLowerCase().includes(searchText);
+      `${book.title} ${book.author}`.toLowerCase().includes(text);
 
     const matchesCategory =
       currentView !== "category" ||
@@ -537,42 +861,41 @@ function renderBooks() {
   });
 
   $("result-count").textContent =
-    `${filtered.length} book${filtered.length === 1 ? "" : "s"}`;
+    `${rows.length} book${rows.length === 1 ? "" : "s"}`;
 
-  if (!filtered.length) {
+  if (!rows.length) {
     grid.append(element(
       "p",
       "empty",
-      currentView === "favourite" && !searchText
-        ? "No favourites yet. Tap the heart on a book to save it."
+      currentView === "favourite" && !text
+        ? "No favourites yet. Tap the heart to save a book."
         : "No books match your search."
     ));
-
     return;
   }
 
-  filtered.forEach((book) => {
+  rows.forEach((book) => {
     const card = element("article", "book-card");
     const cover = element("div", "cover");
 
     cover.style.backgroundColor = book.color;
     cover.style.color = book.ink;
 
-    const favoriteButton = element("button", "favorite-button");
-    favoriteButton.type = "button";
-    favoriteButton.append(createIcon("heart"));
+    const favourite = element("button", "favorite-button");
+    favourite.type = "button";
+    favourite.append(createIcon("heart"));
 
-    updateFavouriteButton(favoriteButton, book);
+    updateFavouriteButton(favourite, book);
 
-    favoriteButton.addEventListener("click", () => {
-      toggleFavourite(book, favoriteButton);
+    favourite.addEventListener("click", () => {
+      toggleFavourite(book, favourite);
     });
 
     cover.append(
       element("span", "cover-author", book.author),
       element("span", "cover-title", book.title),
       element("span", "cover-bottom", book.category),
-      favoriteButton
+      favourite
     );
 
     card.append(
@@ -625,6 +948,7 @@ function renderCategories() {
   });
 }
 
+// Borrowed books and history
 function renderBorrowing() {
   const container = $("details");
   container.replaceChildren();
@@ -635,7 +959,6 @@ function renderBorrowing() {
       "empty",
       requestsError || "Loading borrowing records..."
     ));
-
     return;
   }
 
@@ -653,7 +976,6 @@ function renderBorrowing() {
         ? "No borrowing history yet."
         : "No pending requests or borrowed books yet."
     ));
-
     return;
   }
 
@@ -661,27 +983,33 @@ function renderBorrowing() {
 
   rows.forEach((request) => {
     const card = element("article", "loan-card");
-    const information = element("div");
+    const info = element("div");
 
     let detail;
 
     if (request.status === "pending") {
-      detail = "Waiting for admin approval. No copy has been issued.";
+      detail =
+        "Waiting for admin approval. No copy has been issued.";
     } else if (request.status === "approved") {
       detail = request.dueAt
         ? `Due date: ${formatDate(request.dueAt)}`
         : "Approved. Contact the librarian for your due date.";
     } else if (request.status === "returned") {
       detail = request.returnedAt
-        ? `Returned: ${formatDate(request.returnedAt)}`
+        ? `Returned: ${formatDate(request.returnedAt, true)}`
         : "Book returned.";
     } else {
-      detail = request.reason || "Request declined by the admin.";
+      detail =
+        request.reason || "Request declined by the admin.";
     }
 
-    information.append(
+    info.append(
       element("h3", "", bookTitle(request.bookId)),
-      element("p", "", `Requested: ${formatDate(request.requestedAt)}`),
+      element(
+        "p",
+        "request-timestamp",
+        `Requested: ${formatDate(request.requestedAt, true)}`
+      ),
       element("p", "", detail),
       element("p", "", `Reference: ${request.id}`)
     );
@@ -692,13 +1020,14 @@ function renderBorrowing() {
       request.status === "approved" ? "Borrowed" : request.status
     );
 
-    card.append(information, badge);
+    card.append(info, badge);
     list.append(card);
   });
 
   container.append(list);
 }
 
+// Notification dropdown
 function renderNotifications() {
   const container = $("notification-list");
   container.replaceChildren();
@@ -712,24 +1041,39 @@ function renderNotifications() {
     container.append(element(
       "p",
       "",
-      requestsError ||
-      (!requestsReady ? "Loading updates..." : "No borrowing updates yet.")
+      requestsError || (
+        !requestsReady
+          ? "Loading updates..."
+          : "No borrowing updates yet."
+      )
     ));
-
     return;
   }
 
   updates.forEach((request) => {
-    let text = `${bookTitle(request.bookId)} — ${request.status}`;
+    let text =
+      `${bookTitle(request.bookId)} — ${request.status}`;
 
     if (request.status === "approved" && request.dueAt) {
       text += `. Due ${formatDate(request.dueAt)}`;
     }
 
-    container.append(element("p", "notification-item", text));
+    const item = element("div", "notification-item");
+
+    item.append(
+      element("p", "", text),
+      element(
+        "small",
+        "notification-time",
+        `Requested: ${formatDate(request.requestedAt, true)}`
+      )
+    );
+
+    container.append(item);
   });
 }
 
+// Page views
 function renderDetails(title, lines) {
   const box = element("div", "detail-box");
   box.append(element("h3", "", title));
@@ -745,15 +1089,16 @@ function setView(view) {
   if (!views[view] || !currentUser) return;
 
   currentView = view;
+
   closeDropdowns();
   closeSidebar();
+  studentMessage("");
 
   const [title, description, section] = views[view];
 
   $("page-title").textContent = title;
   $("page-description").textContent = description;
   $("section-title").textContent = section;
-  $("status").textContent = "";
 
   document.querySelectorAll(".nav-button[data-view]").forEach(
     (button) => {
@@ -777,8 +1122,8 @@ function setView(view) {
   $("details").hidden = isCatalogue;
   $("catalog-note").hidden = !isCatalogue;
   $("result-count").hidden = !isCatalogue;
-
   $("search").disabled = !isCatalogue;
+
   $("search").placeholder = isCatalogue
     ? "Search books or authors..."
     : "Search is available in the catalogue";
@@ -789,13 +1134,7 @@ function setView(view) {
   } else if (["library", "history"].includes(view)) {
     renderBorrowing();
   } else if (view === "settings") {
-    renderDetails("Student profile", [
-      `Name: ${currentUser.displayName || "Student"}`,
-      `Email: ${currentUser.email || "Not provided"}`,
-      "Account type: Student",
-      "Email status: Verified",
-      "Contact the librarian to correct your account details."
-    ]);
+    renderDetails("Student profile", profileLines());
   } else if (view === "support") {
     renderDetails("Contact your librarian", [
       "Visit your school library desk for account assistance.",
@@ -806,43 +1145,83 @@ function setView(view) {
   }
 }
 
-document.querySelectorAll("[data-view]").forEach((button) => {
-  button.addEventListener("click", () => {
-    setView(button.dataset.view);
-  });
-});
+// Logout
+async function logoutStudent() {
+  if (
+    !currentUser ||
+    loggingOut ||
+    activeDialog?.open
+  ) {
+    return;
+  }
 
-document.querySelectorAll("[data-dropdown]").forEach((button) => {
-  button.addEventListener("click", () => {
-    const panel = $(button.dataset.dropdown);
+  loggingOut = true;
+  const version = sessionVersion;
+
+  try {
+    const confirmed = await confirmAction(
+      "Log out of BookBase?",
+      "You can sign in again whenever you need your library.",
+      "Yes, log out",
+      null,
+      true
+    );
+
+    if (!confirmed || version !== sessionVersion) return;
+
+    await signOut(auth);
+    window.location.replace("./login.html");
+  } catch {
+    studentMessage(
+      "Unable to log out. Check your connection and try again.",
+      true
+    );
+  } finally {
+    loggingOut = false;
+  }
+}
+
+// Navigation — one handler to avoid duplicate actions
+document.addEventListener("click", (event) => {
+  const logout = event.target.closest("[data-logout]");
+
+  if (logout) {
+    logoutStudent();
+    return;
+  }
+
+  const profile = event.target.closest(
+    '#profile button[data-view="settings"], [data-student-profile], [data-profile-details]'
+  );
+
+  if (profile) {
+    showProfile();
+    return;
+  }
+
+  const view = event.target.closest("[data-view]");
+
+  if (view) {
+    setView(view.dataset.view);
+    return;
+  }
+
+  const trigger = event.target.closest("[data-dropdown]");
+
+  if (trigger) {
+    const panel = $(trigger.dataset.dropdown);
+    if (!panel) return;
+
     const open = panel.hidden;
 
     closeDropdowns();
-
     panel.hidden = !open;
-    button.setAttribute("aria-expanded", String(open));
-  });
-});
+    trigger.setAttribute("aria-expanded", String(open));
+    return;
+  }
 
-document.addEventListener("click", (event) => {
   if (!event.target.closest(".action-wrap")) {
     closeDropdowns();
-  }
-});
-
-document.addEventListener("keydown", (event) => {
-  if (event.key !== "Escape") return;
-
-  const openButton = document.querySelector(
-    '[data-dropdown][aria-expanded="true"]'
-  );
-
-  closeDropdowns();
-  openButton?.focus();
-
-  if ($("sidebar").classList.contains("open")) {
-    closeSidebar();
-    $("menu-button").focus();
   }
 });
 
@@ -857,61 +1236,51 @@ $("menu-button").addEventListener("click", () => {
 $("shade").addEventListener("click", closeSidebar);
 
 $("search").addEventListener("input", () => {
-  if (["discover", "category", "favourite"].includes(currentView)) {
+  if (
+    ["discover", "category", "favourite"].includes(currentView)
+  ) {
     renderBooks();
   }
 });
 
-document.querySelectorAll("[data-logout]").forEach((button) => {
-  button.addEventListener("click", async () => {
-    const buttons = document.querySelectorAll("[data-logout]");
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
 
-    buttons.forEach((item) => {
-      item.disabled = true;
-    });
+  const trigger = document.querySelector(
+    '[data-dropdown][aria-expanded="true"]'
+  );
 
-    try {
-      await signOut(auth);
-     window.location.replace("./adminfiles/admin.html");
-    } catch {
-      $("status").textContent =
-        "Unable to log out. Check your connection and try again.";
+  closeDropdowns();
+  trigger?.focus();
 
-      buttons.forEach((item) => {
-        item.disabled = false;
-      });
-    }
-  });
+  if ($("sidebar").classList.contains("open")) {
+    closeSidebar();
+    $("menu-button").focus();
+  }
 });
 
-$("today").textContent = new Intl.DateTimeFormat("en-PH", {
-  dateStyle: "long",
-  timeZone: "Asia/Manila"
-}).format(new Date());
-
+// Authentication
 onAuthStateChanged(auth, async (user) => {
-    $("app").hidden = true;
-$("loading").hidden = true;
-$("loading").textContent = "";
   const version = ++sessionVersion;
 
   stopBooks?.();
   stopRequests?.();
+  activeDialog?.close();
+  studentMessage("");
 
   currentUser = null;
   liveBooks = new Map();
   requests = [];
+  sending.clear();
 
   catalogueReady = false;
   requestsReady = false;
   catalogueError = "";
   requestsError = "";
 
-  sending.clear();
-
   $("app").hidden = true;
   $("loading").hidden = true;
-$("loading").textContent = "";
+  $("loading").textContent = "";
 
   if (!user || !user.emailVerified) {
     window.location.replace("./login.html");
@@ -919,7 +1288,9 @@ $("loading").textContent = "";
   }
 
   try {
-    const snapshot = await getDoc(doc(db, "roles", user.uid));
+    const snapshot = await getDoc(
+      doc(db, "roles", user.uid)
+    );
 
     if (
       version !== sessionVersion ||
@@ -933,14 +1304,14 @@ $("loading").textContent = "";
       : "student";
 
     if (role === "admin") {
-      window.location.replace("./admin.html");
+      window.location.replace("./adminfiles/admin.html");
       return;
     }
 
     if (role !== "student") {
-      $("loading").textContent =
-        "Invalid account role. Contact the librarian.";
-      return;
+      throw new Error(
+        "Invalid account role. Contact the librarian."
+      );
     }
 
     currentUser = user;
@@ -960,21 +1331,7 @@ $("loading").textContent = "";
       favourites = new Set();
     }
 
-    const name = user.displayName || "Student";
-
-    $("header-name").textContent = name;
-    $("profile-name").textContent = name;
-    $("profile-email").textContent = user.email || "";
-
-    $("avatar").textContent = name
-      .trim()
-      .split(/\s+/)
-      .slice(0, 2)
-      .map((part) => Array.from(part)[0])
-      .join("")
-      .toUpperCase();
-
-    $("loading").hidden = true;
+    fillProfile(user);
     $("app").hidden = false;
 
     setView("discover");
@@ -982,349 +1339,63 @@ $("loading").textContent = "";
   } catch (error) {
     if (version !== sessionVersion) return;
 
-    $("loading").textContent =
-      `Unable to check account (${error.code || "unknown error"}). ` +
-      "Check your connection and Firestore Rules, then refresh.";
+    $("loading").hidden = false;
+
+    $("loading").textContent = error.code
+      ? `Unable to check account (${error.code}). Check your connection and Firestore Rules, then refresh.`
+      : error.message;
   }
 });
-// Student profile and logout interface
 
-let studentLogoutBusy = false;
-let studentLogoutDialog = null;
-let studentProfileDialog = null;
-let studentProfileObserver = null;
+// Live Philippine clock
+// Updates only the display, not the Firestore data.
+const clockDateFormatter = new Intl.DateTimeFormat("en-PH", {
+  month: "long",
+  day: "numeric",
+  year: "numeric",
+  timeZone: "Asia/Manila"
+});
 
-function studentCloseDropdowns() {
-  document.querySelectorAll("[data-dropdown]").forEach((button) => {
-    const panel = document.getElementById(
-      button.dataset.dropdown
-    );
+const clockTimeFormatter = new Intl.DateTimeFormat("en-PH", {
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: true,
+  timeZone: "Asia/Manila"
+});
 
-    if (panel) panel.hidden = true;
+let clockTimer = null;
 
-    button.setAttribute("aria-expanded", "false");
-  });
+function updateDashboardClock() {
+  const target = $("today");
+  const date = $("clock-date");
+  const time = $("clock-time");
+
+  if (!target || !date || !time) return;
+
+  const now = new Date();
+
+  target.dateTime = now.toISOString();
+  date.textContent = clockDateFormatter.format(now);
+  time.textContent = `${clockTimeFormatter.format(now)} PHT`;
 }
 
-function studentPaintAvatar(target, user) {
-  if (!target) return;
-
-  const name = user.displayName || user.email || "Student";
-
-  target.textContent = name
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => Array.from(part)[0])
-    .join("")
-    .toUpperCase();
-
-  if (!user.photoURL) return;
-
-  try {
-    const url = new URL(user.photoURL);
-
-    if (url.protocol !== "https:") return;
-
-    const image = document.createElement("img");
-
-    image.src = url.href;
-    image.alt = "";
-    image.referrerPolicy = "no-referrer";
-
-    image.addEventListener("error", () => {
-      image.remove();
-    });
-
-    target.append(image);
-  } catch {
-    // Keep initials if the profile photo is unavailable.
-  }
+function startDashboardClock() {
+  clearInterval(clockTimer);
+  updateDashboardClock();
+  clockTimer = setInterval(updateDashboardClock, 1000);
 }
 
-// Profile details
+startDashboardClock();
 
-function studentShowProfile() {
-  const user = auth.currentUser;
+window.addEventListener("pagehide", () => {
+  clearInterval(clockTimer);
+});
 
-  if (!user) return;
+window.addEventListener("pageshow", startDashboardClock);
 
-  studentCloseDropdowns();
-
-  if (studentProfileDialog?.open) return;
-
-  const dialog = document.createElement("dialog");
-  studentProfileDialog = dialog;
-
-  dialog.className = "student-dialog";
-
-  dialog.setAttribute(
-    "aria-labelledby",
-    "student-profile-heading"
-  );
-
-  dialog.innerHTML = `
-    <h2 id="student-profile-heading">Profile details</h2>
-
-    <dl class="student-profile-fields"></dl>
-
-    <form method="dialog">
-      <div class="student-dialog-actions">
-        <button class="student-stay" autofocus>
-          Close
-        </button>
-      </div>
-    </form>
-  `;
-
-  const fields = [
-    ["Full name", user.displayName || "Not provided"],
-    ["Email address", user.email || "Not provided"],
-    ["Account role", "Student"],
-    [
-      "Email status",
-      user.emailVerified ? "Verified" : "Not verified"
-    ],
-    ["User ID", user.uid]
-  ];
-
-  const list = dialog.querySelector("dl");
-
-  for (const [label, value] of fields) {
-    const term = document.createElement("dt");
-    term.textContent = label;
-
-    const detail = document.createElement("dd");
-    detail.textContent = value;
-
-    list.append(term, detail);
-  }
-
-  dialog.addEventListener("close", () => {
-    dialog.remove();
-    studentProfileDialog = null;
-  }, { once: true });
-
-  document.body.append(dialog);
-  dialog.showModal();
-}
-
-// Logout confirmation
-
-function studentShowLogout() {
-  const user = auth.currentUser;
-
-  if (
-    !user ||
-    studentLogoutBusy ||
-    studentLogoutDialog?.open
-  ) {
-    return;
-  }
-
-  studentCloseDropdowns();
-
-  const dialog = document.createElement("dialog");
-  studentLogoutDialog = dialog;
-
-  dialog.className = "student-dialog";
-
-  dialog.setAttribute(
-    "aria-labelledby",
-    "student-logout-heading"
-  );
-
-  dialog.setAttribute(
-    "aria-describedby",
-    "student-logout-description"
-  );
-
-  dialog.innerHTML = `
-    <form method="dialog">
-      <h2 id="student-logout-heading">
-        Log out of BookBase?
-      </h2>
-
-      <p id="student-logout-description">
-        You can sign in again whenever you need your library.
-      </p>
-
-      <p class="student-dialog-error" role="alert"></p>
-
-      <div class="student-dialog-actions">
-        <button
-          value="cancel"
-          class="student-stay"
-          autofocus
-        >
-          No, stay
-        </button>
-
-        <button
-          type="button"
-          class="student-confirm-logout"
-        >
-          Yes, log out
-        </button>
-      </div>
-    </form>
-  `;
-
-  const yesButton = dialog.querySelector(
-    ".student-confirm-logout"
-  );
-
-  const noButton = dialog.querySelector(".student-stay");
-  const errorMessage = dialog.querySelector(".student-dialog-error");
-
-  dialog.addEventListener("cancel", (event) => {
-    if (studentLogoutBusy) {
-      event.preventDefault();
-    }
-  });
-
-  dialog.addEventListener("close", () => {
-    dialog.remove();
-    studentLogoutDialog = null;
-  }, { once: true });
-
-  yesButton.addEventListener("click", async () => {
-    if (studentLogoutBusy) return;
-
-    if (auth.currentUser?.uid !== user.uid) {
-      dialog.close();
-      return;
-    }
-
-    studentLogoutBusy = true;
-
-    yesButton.disabled = true;
-    noButton.disabled = true;
-    yesButton.textContent = "Logging out...";
-    errorMessage.textContent = "";
-
-    try {
-      await signOut(auth);
-      window.location.replace("./login.html");
-    } catch {
-      errorMessage.textContent =
-        "Unable to log out. Check your connection and try again.";
-    } finally {
-      studentLogoutBusy = false;
-
-      yesButton.disabled = false;
-      noButton.disabled = false;
-      yesButton.textContent = "Yes, log out";
-    }
-  });
-
-  document.body.append(dialog);
-  dialog.showModal();
-}
-
-// Intercept logout before the existing immediate-logout handler.
-// Also open the profile dialog from the existing Profile details button.
-
-document.addEventListener(
-  "click",
-  (event) => {
-    const logoutButton = event.target.closest("[data-logout]");
-
-    const profileButton = event.target.closest(
-      '#profile button[data-view="settings"], [data-student-profile]'
-    );
-
-    if (!logoutButton && !profileButton) return;
-
-    event.preventDefault();
-    event.stopImmediatePropagation();
-
-    if (logoutButton) {
-      studentShowLogout();
-    } else {
-      studentShowProfile();
-    }
-  },
-  true
-);
-
-// Populate the signed-in student's profile.
-
-onAuthStateChanged(auth, (user) => {
-  studentProfileObserver?.disconnect();
-
-  if (!user) {
-    if (!studentLogoutBusy) {
-      studentLogoutDialog?.close();
-    }
-
-    studentProfileDialog?.close();
-    return;
-  }
-
-  const name = user.displayName || user.email || "Student";
-
-  for (const id of ["header-name", "profile-name"]) {
-    const target = document.getElementById(id);
-
-    if (target) {
-      target.textContent = name;
-    }
-  }
-
-  const email = document.getElementById("profile-email");
-
-  if (email) {
-    email.textContent = user.email || "No email provided";
-  }
-
-  const profile = document.getElementById("profile");
-
-  let profileAvatar = document.getElementById(
-    "student-profile-avatar"
-  );
-
-  if (!profileAvatar && profile) {
-    profileAvatar = document.createElement("span");
-
-    profileAvatar.id = "student-profile-avatar";
-    profileAvatar.className = "avatar student-profile-avatar";
-    profileAvatar.setAttribute("aria-hidden", "true");
-
-    profile.prepend(profileAvatar);
-  }
-
-  studentPaintAvatar(profileAvatar, user);
-
-  // Apply the header photo after the original account check finishes.
-
-  const appPanel = document.getElementById("app");
-
-  function paintHeader() {
-    if (
-      !appPanel ||
-      appPanel.hidden ||
-      auth.currentUser?.uid !== user.uid
-    ) {
-      return;
-    }
-
-    studentPaintAvatar(
-      document.getElementById("avatar"),
-      user
-    );
-
-    studentProfileObserver?.disconnect();
-  }
-
-  if (appPanel && appPanel.hidden) {
-    studentProfileObserver = new MutationObserver(paintHeader);
-
-    studentProfileObserver.observe(appPanel, {
-      attributes: true,
-      attributeFilter: ["hidden"]
-    });
-  } else {
-    paintHeader();
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    updateDashboardClock();
   }
 });

@@ -20,8 +20,7 @@ import {
 } from
   "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
 
-// Firebase configuration
-
+// Firebase
 const app = initializeApp({
   apiKey: "AIzaSyAI-ZTiaClMvISqvG5KIJW8rA_YQ0rukbw",
   authDomain: "library-db9da.firebaseapp.com",
@@ -34,8 +33,6 @@ const app = initializeApp({
 const auth = getAuth(app);
 const db = getFirestore(app);
 const $ = (id) => document.getElementById(id);
-
-// Account and live data
 
 let currentUser = null;
 let currentView = "pending";
@@ -51,79 +48,24 @@ let stopBooks = null;
 let stopRequests = null;
 let version = 0;
 let loggingOut = false;
-let dashboardToastTimer = null;
+let toastTimer = null;
 
 const processing = new Set();
 
-// Student catalogue display books.
-// Actual inventory always comes from Firestore.
-
+// Display books from the student catalogue.
+// Actual inventory comes from Firestore.
 const studentCatalogueDefaults = [
-  {
-    id: "money",
-    title: "The Psychology of Money",
-    author: "Morgan Housel",
-    category: "Finance",
-    color: "#789483",
-    ink: "#ffffff"
-  },
-  {
-    id: "innovation",
-    title: "How Innovation Works",
-    author: "Matt Ridley",
-    category: "Science",
-    color: "#f5d52c",
-    ink: "#263b42"
-  },
-  {
-    id: "company",
-    title: "Company of One",
-    author: "Paul Jarvis",
-    category: "Business",
-    color: "#e9eae3",
-    ink: "#303a42"
-  },
-  {
-    id: "habits",
-    title: "Atomic Habits",
-    author: "James Clear",
-    category: "Self-development",
-    color: "#e6d8c0",
-    ink: "#554334"
-  },
-  {
-    id: "alchemist",
-    title: "The Alchemist",
-    author: "Paulo Coelho",
-    category: "Fiction",
-    color: "#b76342",
-    ink: "#fff3d8"
-  },
-  {
-    id: "brief",
-    title: "A Brief History of Time",
-    author: "Stephen Hawking",
-    category: "Science",
-    color: "#263c60",
-    ink: "#e7efff"
-  },
-  {
-    id: "deep",
-    title: "Deep Work",
-    author: "Cal Newport",
-    category: "Self-development",
-    color: "#cc6c53",
-    ink: "#fff7ed"
-  },
-  {
-    id: "little",
-    title: "The Little Prince",
-    author: "Antoine de Saint-Exupéry",
-    category: "Fiction",
-    color: "#9fbfc9",
-    ink: "#203c50"
-  }
-];
+  ["money", "The Psychology of Money", "Morgan Housel", "Finance", "#789483", "#ffffff"],
+  ["innovation", "How Innovation Works", "Matt Ridley", "Science", "#f5d52c", "#263b42"],
+  ["company", "Company of One", "Paul Jarvis", "Business", "#e9eae3", "#303a42"],
+  ["habits", "Atomic Habits", "James Clear", "Self-development", "#e6d8c0", "#554334"],
+  ["alchemist", "The Alchemist", "Paulo Coelho", "Fiction", "#b76342", "#fff3d8"],
+  ["brief", "A Brief History of Time", "Stephen Hawking", "Science", "#263c60", "#e7efff"],
+  ["deep", "Deep Work", "Cal Newport", "Self-development", "#cc6c53", "#fff7ed"],
+  ["little", "The Little Prince", "Antoine de Saint-Exupéry", "Fiction", "#9fbfc9", "#203c50"]
+].map(([id, title, author, category, color, ink]) => ({
+  id, title, author, category, color, ink
+}));
 
 const pages = {
   pending: [
@@ -145,7 +87,6 @@ const pages = {
 };
 
 // General helpers
-
 function node(tag, className = "", text) {
   const item = document.createElement(tag);
   item.className = className;
@@ -157,13 +98,16 @@ function node(tag, className = "", text) {
   return item;
 }
 
+// Firestore timestamp → Philippine date AND time
 function dateText(value) {
-  if (!value?.toDate) return "Not set";
+  if (!value?.toDate) return "Timestamp not recorded";
 
   return new Intl.DateTimeFormat("en-PH", {
     dateStyle: "medium",
+    timeStyle: "medium",
+    hour12: true,
     timeZone: "Asia/Manila"
-  }).format(value.toDate());
+  }).format(value.toDate()) + " PHT";
 }
 
 function titleFor(id) {
@@ -175,10 +119,7 @@ function titleFor(id) {
 function closeMenus() {
   document.querySelectorAll("[data-dropdown]").forEach((button) => {
     const panel = $(button.dataset.dropdown);
-
-    if (panel) {
-      panel.hidden = true;
-    }
+    if (panel) panel.hidden = true;
 
     button.setAttribute("aria-expanded", "false");
   });
@@ -190,18 +131,11 @@ function closeSidebar() {
   $("menu-button").setAttribute("aria-expanded", "false");
 }
 
-// Notifications
-// Green = successful, red = error, blue = processing/information.
-
+// Green success / red error / blue information
 function message(text, error = false, kind = "success") {
-  clearTimeout(dashboardToastTimer);
-  document.getElementById("dashboard-toast")?.remove();
-
-  const status = document.getElementById("status");
-
-  if (status) {
-    status.textContent = "";
-  }
+  clearTimeout(toastTimer);
+  $("dashboard-toast")?.remove();
+  $("status").textContent = "";
 
   if (!text) return;
 
@@ -223,126 +157,38 @@ function message(text, error = false, kind = "success") {
     info: "i"
   };
 
-  const palette = {
-    success: {
-      background: "#ecfdf3",
-      color: "#166534",
-      border: "#bbdfc6"
-    },
-    error: {
-      background: "#fff1f2",
-      color: "#991b1b",
-      border: "#fecaca"
-    },
-    info: {
-      background: "#eff6ff",
-      color: "#1e40af",
-      border: "#bfdbfe"
-    }
-  }[type];
-
-  const toast = document.createElement("div");
+  const toast = node("div", `dashboard-toast ${type}`);
   toast.id = "dashboard-toast";
-  toast.className = `dashboard-toast ${type}`;
 
-  Object.assign(toast.style, {
-    position: "fixed",
-    top: "104px",
-    right: "16px",
-    zIndex: "1000",
-    width: "min(380px, calc(100vw - 32px))",
-    display: "flex",
-    alignItems: "flex-start",
-    gap: "12px",
-    padding: "16px",
-    borderRadius: "12px",
-    border: `1px solid ${palette.border}`,
-    backgroundColor: palette.background,
-    color: palette.color,
-    boxShadow: "0 10px 30px #18274418"
-  });
-
-  const icon = document.createElement("span");
-  icon.className = "toast-icon";
-  icon.textContent = symbols[type];
+  const icon = node("span", "toast-icon", symbols[type]);
   icon.setAttribute("aria-hidden", "true");
 
-  Object.assign(icon.style, {
-    width: "24px",
-    height: "24px",
-    display: "grid",
-    placeItems: "center",
-    flexShrink: "0",
-    border: "1px solid currentColor",
-    borderRadius: "50%",
-    fontSize: "14px",
-    fontWeight: "700"
-  });
-
-  const content = document.createElement("div");
-  content.className = "toast-content";
+  const content = node("div", "toast-content");
   content.setAttribute("role", error ? "alert" : "status");
   content.setAttribute("aria-atomic", "true");
 
-  Object.assign(content.style, {
-    flex: "1",
-    minWidth: "0"
-  });
+  content.append(
+    node("strong", "", labels[type]),
+    node("p", "", text)
+  );
 
-  const title = document.createElement("strong");
-  title.textContent = labels[type];
-
-  Object.assign(title.style, {
-    display: "block",
-    marginBottom: "5px",
-    fontSize: "13px"
-  });
-
-  const description = document.createElement("p");
-  description.textContent = text;
-
-  Object.assign(description.style, {
-    margin: "0",
-    color: "inherit",
-    fontSize: "12px",
-    lineHeight: "1.7",
-    overflowWrap: "anywhere"
-  });
-
-  const close = document.createElement("button");
+  const close = node("button", "toast-close", "×");
   close.type = "button";
-  close.className = "toast-close";
-  close.textContent = "×";
   close.setAttribute("aria-label", "Dismiss notification");
 
-  Object.assign(close.style, {
-    width: "28px",
-    height: "28px",
-    flexShrink: "0",
-    padding: "0",
-    border: "0",
-    borderRadius: "6px",
-    background: "transparent",
-    color: "inherit",
-    fontSize: "21px",
-    cursor: "pointer"
-  });
-
   close.addEventListener("click", () => {
-    clearTimeout(dashboardToastTimer);
+    clearTimeout(toastTimer);
     toast.remove();
   });
 
-  content.append(title, description);
   toast.append(icon, content, close);
   document.body.append(toast);
 
   function scheduleDismiss() {
-    clearTimeout(dashboardToastTimer);
-
+    clearTimeout(toastTimer);
     if (type !== "success") return;
 
-    dashboardToastTimer = setTimeout(() => {
+    toastTimer = setTimeout(() => {
       if (
         toast.isConnected &&
         !toast.matches(":hover, :focus-within")
@@ -353,11 +199,11 @@ function message(text, error = false, kind = "success") {
   }
 
   toast.addEventListener("pointerenter", () => {
-    clearTimeout(dashboardToastTimer);
+    clearTimeout(toastTimer);
   });
 
   toast.addEventListener("focusin", () => {
-    clearTimeout(dashboardToastTimer);
+    clearTimeout(toastTimer);
   });
 
   toast.addEventListener("pointerleave", scheduleDismiss);
@@ -367,7 +213,6 @@ function message(text, error = false, kind = "success") {
 }
 
 // Profile
-
 function fillAvatar(target, user) {
   if (!target) return;
 
@@ -385,18 +230,17 @@ function fillAvatar(target, user) {
 
   try {
     const url = new URL(user.photoURL);
-
     if (url.protocol !== "https:") return;
 
     const image = node("img");
     image.src = url.href;
     image.alt = "";
     image.referrerPolicy = "no-referrer";
-
     image.addEventListener("error", () => image.remove());
+
     target.append(image);
   } catch {
-    // Keep initials if the profile photo is unavailable.
+    // Keep initials if no valid photo is available.
   }
 }
 
@@ -420,10 +264,10 @@ function showProfile() {
   closeMenus();
 
   const dialog = node("dialog", "ui-dialog");
-  dialog.setAttribute("aria-labelledby", "profile-dialog-title");
-
   const heading = node("h2", "", "Profile details");
+
   heading.id = "profile-dialog-title";
+  dialog.setAttribute("aria-labelledby", heading.id);
 
   const details = node("dl", "profile-fields");
 
@@ -431,18 +275,12 @@ function showProfile() {
     ["Full name", currentUser.displayName || "Not provided"],
     ["Email address", currentUser.email || "Not provided"],
     ["Role", "Admin / Librarian"],
-    [
-      "Email status",
-      currentUser.emailVerified ? "Verified" : "Not verified"
-    ],
+    ["Email status", currentUser.emailVerified ? "Verified" : "Not verified"],
     ["User ID", currentUser.uid]
   ];
 
   fields.forEach(([label, value]) => {
-    details.append(
-      node("dt", "", label),
-      node("dd", "", value)
-    );
+    details.append(node("dt", "", label), node("dd", "", value));
   });
 
   const form = node("form");
@@ -466,8 +304,7 @@ function showProfile() {
   dialog.showModal();
 }
 
-// Confirmation dialog
-
+// Confirmation
 function ask(
   title,
   description,
@@ -499,9 +336,7 @@ function ask(
           class="ui-neutral"
           formnovalidate
           autofocus
-        >
-          No, cancel
-        </button>
+        >No, cancel</button>
 
         <button
           value="confirm"
@@ -512,11 +347,7 @@ function ask(
   `;
 
   dialog.setAttribute("aria-labelledby", "confirmation-title");
-
-  dialog.setAttribute(
-    "aria-describedby",
-    "confirmation-description"
-  );
+  dialog.setAttribute("aria-describedby", "confirmation-description");
 
   document.body.append(dialog);
 
@@ -526,9 +357,8 @@ function ask(
   $("confirmation-reason").required = needsReason;
   $("confirmation-yes").textContent = yesLabel;
 
-  $("confirmation-yes").className = danger
-    ? "ui-danger"
-    : "ui-success";
+  $("confirmation-yes").className =
+    danger ? "ui-danger" : "ui-success";
 
   return new Promise((resolve) => {
     dialog.addEventListener("close", () => {
@@ -545,10 +375,9 @@ function ask(
 }
 
 // Dashboard
-
 function refresh() {
   const pending = requests.filter(
-    (item) => item.status === "pending"
+    (request) => request.status === "pending"
   ).length;
 
   $("pending-count").textContent =
@@ -556,7 +385,7 @@ function refresh() {
 
   $("borrowed-count").textContent =
     requestsLoaded && !requestsError
-      ? requests.filter((item) => item.status === "approved").length
+      ? requests.filter((request) => request.status === "approved").length
       : "—";
 
   $("copies-count").textContent =
@@ -588,13 +417,11 @@ function setView(view) {
 
   $("page-title").textContent = pages[view][0];
   $("page-description").textContent = pages[view][1];
-
   $("requests-panel").hidden = view === "books";
   $("books-panel").hidden = view !== "books";
 
   document.querySelectorAll("[data-view]").forEach((button) => {
     const active = button.dataset.view === view;
-
     button.classList.toggle("active", active);
 
     if (active) {
@@ -612,7 +439,6 @@ function setView(view) {
 
 function actionButton(text, className, request, action) {
   const button = node("button", className, text);
-
   button.type = "button";
   button.disabled = processing.has(request.id);
 
@@ -623,8 +449,7 @@ function actionButton(text, className, request, action) {
   return button;
 }
 
-// Borrow requests
-
+// Requests, loans, and history
 function renderRequests() {
   const container = $("request-list");
   container.replaceChildren();
@@ -661,7 +486,11 @@ function renderRequests() {
     details.append(
       node("h3", "", titleFor(request.bookId)),
       node("p", "", `Borrower UID: ${request.studentUid}`),
-      node("p", "", `Requested: ${dateText(request.requestedAt)}`),
+      node(
+        "p",
+        "request-timestamp",
+        `Requested: ${dateText(request.requestedAt)}`
+      ),
       node("p", "", `Reference: ${request.id}`)
     );
 
@@ -694,9 +523,17 @@ function renderRequests() {
         actionButton("Reject", "danger", request, "reject")
       );
     } else if (request.status === "approved") {
+      if (request.approvedAt) {
+        details.append(node(
+          "p",
+          "request-timestamp",
+          `Approved: ${dateText(request.approvedAt)}`
+        ));
+      }
+
       details.append(node(
         "p",
-        "",
+        "request-timestamp",
         `Due: ${dateText(request.dueAt)}`
       ));
 
@@ -710,8 +547,16 @@ function renderRequests() {
       if (request.status === "returned") {
         details.append(node(
           "p",
-          "",
+          "request-timestamp",
           `Returned: ${dateText(request.returnedAt)}`
+        ));
+      }
+
+      if (request.status === "rejected" && request.reviewedAt) {
+        details.append(node(
+          "p",
+          "request-timestamp",
+          `Reviewed: ${dateText(request.reviewedAt)}`
         ));
       }
 
@@ -778,7 +623,6 @@ async function processRequest(request, action) {
       }
 
       const data = snapshot.data();
-
       const expectedStatus =
         action === "return" ? "approved" : "pending";
 
@@ -787,7 +631,6 @@ async function processRequest(request, action) {
       }
 
       const bookRef = doc(db, "books", data.bookId);
-
       const lockRef = doc(
         db,
         "borrowLocks",
@@ -868,9 +711,7 @@ async function processRequest(request, action) {
           ? "Request approved successfully. One copy issued for 7 days."
           : action === "reject"
             ? "Request rejected successfully. Inventory unchanged."
-            : "Book returned successfully. One copy restored.",
-        false,
-        "success"
+            : "Book returned successfully. One copy restored."
       );
     }
   } catch (error) {
@@ -891,16 +732,12 @@ async function processRequest(request, action) {
   }
 }
 
-// Merge the student catalogue with Firestore inventory
-
+// Full catalogue
 function adminCatalogueBooks() {
   const merged = new Map(
     studentCatalogueDefaults.map((book) => [
       book.id,
-      {
-        ...book,
-        registered: false
-      }
+      { ...book, registered: false }
     ])
   );
 
@@ -925,11 +762,8 @@ function adminCatalogueBooks() {
   );
 }
 
-// Manage Books
-
 function renderBooks() {
   const container = $("book-list");
-
   container.replaceChildren();
   container.classList.add("admin-book-grid");
 
@@ -1027,9 +861,7 @@ function renderBooks() {
           block: "center"
         });
 
-        $("book-copies").focus({
-          preventScroll: true
-        });
+        $("book-copies").focus({ preventScroll: true });
 
         message(
           "Enter the actual available copies, then click Add Book.",
@@ -1047,7 +879,6 @@ function renderBooks() {
 }
 
 // Add Book
-
 $("book-form").addEventListener("submit", async (event) => {
   event.preventDefault();
 
@@ -1079,7 +910,6 @@ $("book-form").addEventListener("submit", async (event) => {
 
   $("save-book").disabled = true;
   $("save-book").textContent = "Saving...";
-
   message("Saving book...", false, "info");
 
   try {
@@ -1102,15 +932,9 @@ $("book-form").addEventListener("submit", async (event) => {
       });
     });
 
-    // Show green success only after Firestore confirms the save.
     if (session === version) {
       $("book-form").reset();
-
-      message(
-        "Book added successfully.",
-        false,
-        "success"
-      );
+      message("Book added successfully.");
     }
   } catch (error) {
     if (session === version) {
@@ -1127,8 +951,7 @@ $("book-form").addEventListener("submit", async (event) => {
   }
 });
 
-// Navigation and dropdowns
-
+// Navigation
 document.querySelectorAll("[data-view]").forEach((button) => {
   button.addEventListener("click", () => {
     setView(button.dataset.view);
@@ -1138,13 +961,11 @@ document.querySelectorAll("[data-view]").forEach((button) => {
 document.querySelectorAll("[data-dropdown]").forEach((button) => {
   button.addEventListener("click", () => {
     const panel = $(button.dataset.dropdown);
-
     if (!panel) return;
 
     const open = panel.hidden;
 
     closeMenus();
-
     panel.hidden = !open;
     button.setAttribute("aria-expanded", String(open));
   });
@@ -1160,14 +981,12 @@ document.addEventListener("click", (event) => {
   }
 });
 
-// Logout confirmation
-
+// Logout
 document.querySelectorAll("[data-logout]").forEach((button) => {
   button.addEventListener("click", async () => {
     if (!currentUser || loggingOut) return;
 
     loggingOut = true;
-
     const session = version;
 
     try {
@@ -1193,18 +1012,13 @@ document.querySelectorAll("[data-logout]").forEach((button) => {
   });
 });
 
-// Mobile sidebar
-
+// Mobile navigation
 $("menu-button").addEventListener("click", () => {
   const open = !$("sidebar").classList.contains("open");
 
   $("sidebar").classList.toggle("open", open);
   $("shade").hidden = !open;
-
-  $("menu-button").setAttribute(
-    "aria-expanded",
-    String(open)
-  );
+  $("menu-button").setAttribute("aria-expanded", String(open));
 });
 
 $("shade").addEventListener("click", closeSidebar);
@@ -1226,7 +1040,6 @@ document.addEventListener("keydown", (event) => {
 });
 
 // Authentication and live data
-
 onAuthStateChanged(auth, async (user) => {
   const session = ++version;
 
@@ -1255,9 +1068,7 @@ onAuthStateChanged(auth, async (user) => {
   }
 
   try {
-    const role = await getDoc(
-      doc(db, "roles", user.uid)
-    );
+    const role = await getDoc(doc(db, "roles", user.uid));
 
     if (
       session !== version ||
@@ -1266,9 +1077,7 @@ onAuthStateChanged(auth, async (user) => {
       return;
     }
 
-    const value = role.exists()
-      ? role.data().role
-      : "student";
+    const value = role.exists() ? role.data().role : "student";
 
     if (value === "student") {
       window.location.replace("../student.html");
@@ -1291,7 +1100,6 @@ onAuthStateChanged(auth, async (user) => {
 
     stopBooks = onSnapshot(
       collection(db, "books"),
-
       (snapshot) => {
         if (session !== version) return;
 
@@ -1299,28 +1107,21 @@ onAuthStateChanged(auth, async (user) => {
         booksError = "";
 
         books = new Map(
-          snapshot.docs.map((item) => [
-            item.id,
-            item.data()
-          ])
+          snapshot.docs.map((item) => [item.id, item.data()])
         );
 
         refresh();
       },
-
       (error) => {
         if (session !== version) return;
 
-        booksError =
-          `Unable to load inventory (${error.code}).`;
-
+        booksError = `Unable to load inventory (${error.code}).`;
         refresh();
       }
     );
 
     stopRequests = onSnapshot(
       collection(db, "borrowRequests"),
-
       (snapshot) => {
         if (session !== version) return;
 
@@ -1340,7 +1141,6 @@ onAuthStateChanged(auth, async (user) => {
 
         refresh();
       },
-
       (error) => {
         if (session !== version) return;
 
@@ -1358,5 +1158,59 @@ onAuthStateChanged(auth, async (user) => {
     $("loading").textContent = error.code
       ? `Unable to verify admin (${error.code}). Check your connection and Firestore Rules.`
       : error.message;
+  }
+});
+
+// Live Philippine clock
+// Updates the display only; it does not reload Firestore data.
+
+const clockDateFormatter = new Intl.DateTimeFormat("en-PH", {
+  month: "long",
+  day: "numeric",
+  year: "numeric",
+  timeZone: "Asia/Manila"
+});
+
+const clockTimeFormatter = new Intl.DateTimeFormat("en-PH", {
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: true,
+  timeZone: "Asia/Manila"
+});
+
+let clockTimer = null;
+
+function updateDashboardClock() {
+  const target = $("dashboard-clock");
+  const date = $("clock-date");
+  const time = $("clock-time");
+
+  if (!target || !date || !time) return;
+
+  const now = new Date();
+
+  target.dateTime = now.toISOString();
+  date.textContent = clockDateFormatter.format(now);
+  time.textContent = `${clockTimeFormatter.format(now)} PHT`;
+}
+
+function startDashboardClock() {
+  clearInterval(clockTimer);
+  updateDashboardClock();
+  clockTimer = setInterval(updateDashboardClock, 1000);
+}
+
+startDashboardClock();
+
+window.addEventListener("pagehide", () => {
+  clearInterval(clockTimer);
+});
+
+window.addEventListener("pageshow", startDashboardClock);
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    updateDashboardClock();
   }
 });

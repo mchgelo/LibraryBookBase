@@ -1,5 +1,4 @@
 /* Base */
-
 * {
   box-sizing: border-box;
 }
@@ -58,7 +57,6 @@ input:focus-visible {
 }
 
 /* Sidebar */
-
 .sidebar {
   position: fixed;
   inset: 0 auto 0 0;
@@ -121,7 +119,7 @@ input:focus-visible {
   background: transparent;
   color: var(--muted);
   text-align: left;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   line-height: 1.4;
   letter-spacing: 0.1px;
@@ -167,8 +165,7 @@ input:focus-visible {
   color: #b4233c;
 }
 
-/* Top navigation */
-
+/* Header */
 .workspace {
   min-height: 100vh;
   margin-left: 250px;
@@ -236,8 +233,7 @@ input:focus-visible {
   height: 20px;
 }
 
-/* User name and avatar */
-
+/* Profile */
 .profile-button {
   display: flex;
   align-items: center;
@@ -310,7 +306,6 @@ input:focus-visible {
 }
 
 /* Dropdowns */
-
 .dropdown {
   position: absolute;
   top: calc(100% + 15px);
@@ -365,8 +360,15 @@ input:focus-visible {
   border-bottom: 1px solid var(--border);
 }
 
-/* Main content */
+.notification-time {
+  display: block;
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
 
+/* Content and live clock */
 .content {
   max-width: 1450px;
   margin: auto;
@@ -402,10 +404,29 @@ h1 {
   line-height: 1.6;
 }
 
-.date-label {
+.dashboard-clock {
+  display: block;
+  flex-shrink: 0;
   color: var(--muted);
   font-size: 12px;
+  line-height: 1.6;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.clock-date,
+.clock-time {
+  display: block;
+}
+
+.clock-time {
+  color: var(--text);
+  font-weight: 600;
   white-space: nowrap;
+}
+
+.request-timestamp {
+  font-variant-numeric: tabular-nums;
 }
 
 .panel {
@@ -434,8 +455,7 @@ h1 {
   font-size: 12px;
 }
 
-/* Category filters */
-
+/* Categories */
 .categories {
   display: flex;
   flex-wrap: wrap;
@@ -458,8 +478,7 @@ h1 {
   color: #fff;
 }
 
-/* Book cards */
-
+/* Books */
 .book-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -563,8 +582,6 @@ h1 {
   margin-top: 10px !important;
 }
 
-/* Yellow availability and green borrowing */
-
 .book-actions {
   display: grid;
   gap: 8px;
@@ -607,7 +624,6 @@ h1 {
 }
 
 /* Borrowing records */
-
 .loan-list {
   display: grid;
   gap: 14px;
@@ -695,6 +711,10 @@ h1 {
   line-height: 1.7;
 }
 
+#status:empty {
+  display: none;
+}
+
 .empty {
   grid-column: 1 / -1;
   padding: 40px 15px;
@@ -704,8 +724,7 @@ h1 {
   line-height: 1.8;
 }
 
-/* Profile and logout dialogs */
-
+/* Confirmation and profile dialogs */
 .student-dialog {
   width: min(440px, calc(100% - 32px));
   max-height: 85vh;
@@ -761,35 +780,107 @@ h1 {
   color: #fff;
 }
 
-.student-dialog button:disabled {
-  opacity: 0.55;
-  cursor: wait;
+.student-confirm-borrow {
+  background: var(--green);
+  color: #fff;
 }
 
-.student-dialog .student-dialog-error {
-  color: #b42318;
+.borrow-confirm-summary {
+  margin: 20px 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #f5f8ff;
 }
 
-.student-profile-fields {
-  margin: 22px 0 0;
-}
-
-.student-profile-fields dt {
-  margin-top: 17px;
-  color: #708096;
-  font-size: 11px;
-}
-
-.student-profile-fields dd {
-  margin: 6px 0 0;
-  color: var(--text);
-  font-size: 13px;
-  line-height: 1.6;
+.borrow-confirm-summary strong {
+  display: block;
+  font-size: 15px;
+  line-height: 1.5;
   overflow-wrap: anywhere;
 }
 
-/* Mobile navigation */
+.borrow-confirm-summary p {
+  margin: 7px 0 0;
+}
 
+/* Toast notifications */
+.student-toast {
+  position: fixed;
+  top: 104px;
+  right: 16px;
+  z-index: 1000;
+  width: min(380px, calc(100vw - 32px));
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px #18274418;
+}
+
+.student-toast.success {
+  border-color: #bbdfc6;
+  background: #ecfdf3;
+  color: #166534;
+}
+
+.student-toast.error {
+  border-color: #fecaca;
+  background: #fff1f2;
+  color: #991b1b;
+}
+
+.student-toast.info {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1e40af;
+}
+
+.student-toast-icon {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-weight: 700;
+}
+
+.student-toast-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.student-toast-content strong {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 13px;
+}
+
+.student-toast-content p {
+  margin: 0;
+  color: inherit;
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.student-toast-close {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 21px;
+}
+
+/* Loading and mobile navigation */
 .mobile-menu {
   display: none;
 }
@@ -800,8 +891,6 @@ h1 {
   z-index: 35;
   background: #10213d66;
 }
-
-/* Top loading bar */
 
 #page-loader {
   position: fixed;
@@ -829,14 +918,12 @@ body:has(#loading:not([hidden]):not(:empty)) #page-loader {
   from {
     transform: translateX(-100%);
   }
-
   to {
     transform: translateX(390%);
   }
 }
 
 /* Responsive layout */
-
 @media (min-width: 1500px) {
   .book-grid {
     grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -893,8 +980,7 @@ body:has(#loading:not([hidden]):not(:empty)) #page-loader {
     padding-left: 8px;
   }
 
-  .profile-arrow,
-  .date-label {
+  .profile-arrow {
     display: none;
   }
 
@@ -912,6 +998,17 @@ body:has(#loading:not([hidden]):not(:empty)) #page-loader {
 @media (max-width: 600px) {
   .user-summary {
     display: none;
+  }
+
+  .greeting {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .dashboard-clock {
+    font-size: 11px;
+    text-align: left;
   }
 }
 
