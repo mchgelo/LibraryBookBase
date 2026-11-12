@@ -54,7 +54,7 @@
     </symbol>
   </svg>
 
-  <<p id="loading" class="loading" role="status" hidden></p>
+ <p id="loading" class="loading" role="status" hidden></p>
 
   <div id="app" hidden>
     <div id="shade" class="shade" hidden></div>
@@ -69,39 +69,41 @@
         BookBase
       </div>
 
-      <p class="nav-label">LIBRARIAN WORKSPACE</p>
+      <p class="nav-label">MAIN</p>
 
-      <nav aria-label="Main navigation">
-        <button class="nav-button active"
-                data-view="pending"
-                aria-current="page">
-          <svg class="icon" aria-hidden="true">
-            <use href="#i-requests"/>
-          </svg>
-          BORROW REQUESTS
-        </button>
+<nav aria-label="Main navigation">
+  <button
+    class="nav-button active"
+    data-view="pending"
+    aria-current="page"
+  >
+    <svg class="icon" aria-hidden="true">
+      <use href="#i-requests"/>
+    </svg>
+    Borrow Requests
+  </button>
 
-        <button class="nav-button" data-view="approved">
-          <svg class="icon" aria-hidden="true">
-            <use href="#i-book"/>
-          </svg>
-          BORROWED BOOKS
-        </button>
+  <button class="nav-button" data-view="approved">
+    <svg class="icon" aria-hidden="true">
+      <use href="#i-book"/>
+    </svg>
+    Borrowed Books
+  </button>
 
-        <button class="nav-button" data-view="history">
-          <svg class="icon" aria-hidden="true">
-            <use href="#i-history"/>
-          </svg>
-          BORROWING HISTORY
-        </button>
+  <button class="nav-button" data-view="history">
+    <svg class="icon" aria-hidden="true">
+      <use href="#i-history"/>
+    </svg>
+    Borrowing History
+  </button>
 
-        <button class="nav-button" data-view="books">
-          <svg class="icon" aria-hidden="true">
-            <use href="#i-grid"/>
-          </svg>
-          MANAGE BOOKS
-        </button>
-      </nav>
+  <button class="nav-button" data-view="books">
+    <svg class="icon" aria-hidden="true">
+      <use href="#i-grid"/>
+    </svg>
+    Manage Books
+  </button>
+</nav>
 
       <div class="sidebar-bottom">
         <div class="divider"></div>

@@ -20,6 +20,8 @@ import {
 } from
   "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
 
+// Firebase configuration
+
 const app = initializeApp({
   apiKey: "AIzaSyAI-ZTiaClMvISqvG5KIJW8rA_YQ0rukbw",
   authDomain: "library-db9da.firebaseapp.com",
@@ -32,6 +34,8 @@ const app = initializeApp({
 const auth = getAuth(app);
 const db = getFirestore(app);
 const $ = (id) => document.getElementById(id);
+
+// Account and live data
 
 let currentUser = null;
 let currentView = "pending";
@@ -47,8 +51,79 @@ let stopBooks = null;
 let stopRequests = null;
 let version = 0;
 let loggingOut = false;
+let dashboardToastTimer = null;
 
 const processing = new Set();
+
+// Student catalogue display books.
+// Actual inventory always comes from Firestore.
+
+const studentCatalogueDefaults = [
+  {
+    id: "money",
+    title: "The Psychology of Money",
+    author: "Morgan Housel",
+    category: "Finance",
+    color: "#789483",
+    ink: "#ffffff"
+  },
+  {
+    id: "innovation",
+    title: "How Innovation Works",
+    author: "Matt Ridley",
+    category: "Science",
+    color: "#f5d52c",
+    ink: "#263b42"
+  },
+  {
+    id: "company",
+    title: "Company of One",
+    author: "Paul Jarvis",
+    category: "Business",
+    color: "#e9eae3",
+    ink: "#303a42"
+  },
+  {
+    id: "habits",
+    title: "Atomic Habits",
+    author: "James Clear",
+    category: "Self-development",
+    color: "#e6d8c0",
+    ink: "#554334"
+  },
+  {
+    id: "alchemist",
+    title: "The Alchemist",
+    author: "Paulo Coelho",
+    category: "Fiction",
+    color: "#b76342",
+    ink: "#fff3d8"
+  },
+  {
+    id: "brief",
+    title: "A Brief History of Time",
+    author: "Stephen Hawking",
+    category: "Science",
+    color: "#263c60",
+    ink: "#e7efff"
+  },
+  {
+    id: "deep",
+    title: "Deep Work",
+    author: "Cal Newport",
+    category: "Self-development",
+    color: "#cc6c53",
+    ink: "#fff7ed"
+  },
+  {
+    id: "little",
+    title: "The Little Prince",
+    author: "Antoine de Saint-Exupéry",
+    category: "Fiction",
+    color: "#9fbfc9",
+    ink: "#203c50"
+  }
+];
 
 const pages = {
   pending: [
@@ -65,7 +140,7 @@ const pages = {
   ],
   books: [
     "Manage books",
-    "Add books and check available inventory."
+    "View the student catalogue and manage book inventory."
   ]
 };
 
@@ -82,11 +157,6 @@ function node(tag, className = "", text) {
   return item;
 }
 
-function message(text, error = false) {
-  $("status").textContent = text;
-  $("status").style.color = error ? "#b42318" : "#166534";
-}
-
 function dateText(value) {
   if (!value?.toDate) return "Not set";
 
@@ -97,12 +167,19 @@ function dateText(value) {
 }
 
 function titleFor(id) {
-  return books.get(id)?.title || id;
+  return books.get(id)?.title ||
+    studentCatalogueDefaults.find((book) => book.id === id)?.title ||
+    id;
 }
 
 function closeMenus() {
   document.querySelectorAll("[data-dropdown]").forEach((button) => {
-    $(button.dataset.dropdown).hidden = true;
+    const panel = $(button.dataset.dropdown);
+
+    if (panel) {
+      panel.hidden = true;
+    }
+
     button.setAttribute("aria-expanded", "false");
   });
 }
@@ -113,9 +190,187 @@ function closeSidebar() {
   $("menu-button").setAttribute("aria-expanded", "false");
 }
 
+// Notifications
+// Green = successful, red = error, blue = processing/information.
+
+function message(text, error = false, kind = "success") {
+  clearTimeout(dashboardToastTimer);
+  document.getElementById("dashboard-toast")?.remove();
+
+  const status = document.getElementById("status");
+
+  if (status) {
+    status.textContent = "";
+  }
+
+  if (!text) return;
+
+  const type = error
+    ? "error"
+    : kind === "info"
+      ? "info"
+      : "success";
+
+  const labels = {
+    success: "Successful",
+    error: "Action failed",
+    info: "Notice"
+  };
+
+  const symbols = {
+    success: "✓",
+    error: "!",
+    info: "i"
+  };
+
+  const palette = {
+    success: {
+      background: "#ecfdf3",
+      color: "#166534",
+      border: "#bbdfc6"
+    },
+    error: {
+      background: "#fff1f2",
+      color: "#991b1b",
+      border: "#fecaca"
+    },
+    info: {
+      background: "#eff6ff",
+      color: "#1e40af",
+      border: "#bfdbfe"
+    }
+  }[type];
+
+  const toast = document.createElement("div");
+  toast.id = "dashboard-toast";
+  toast.className = `dashboard-toast ${type}`;
+
+  Object.assign(toast.style, {
+    position: "fixed",
+    top: "104px",
+    right: "16px",
+    zIndex: "1000",
+    width: "min(380px, calc(100vw - 32px))",
+    display: "flex",
+    alignItems: "flex-start",
+    gap: "12px",
+    padding: "16px",
+    borderRadius: "12px",
+    border: `1px solid ${palette.border}`,
+    backgroundColor: palette.background,
+    color: palette.color,
+    boxShadow: "0 10px 30px #18274418"
+  });
+
+  const icon = document.createElement("span");
+  icon.className = "toast-icon";
+  icon.textContent = symbols[type];
+  icon.setAttribute("aria-hidden", "true");
+
+  Object.assign(icon.style, {
+    width: "24px",
+    height: "24px",
+    display: "grid",
+    placeItems: "center",
+    flexShrink: "0",
+    border: "1px solid currentColor",
+    borderRadius: "50%",
+    fontSize: "14px",
+    fontWeight: "700"
+  });
+
+  const content = document.createElement("div");
+  content.className = "toast-content";
+  content.setAttribute("role", error ? "alert" : "status");
+  content.setAttribute("aria-atomic", "true");
+
+  Object.assign(content.style, {
+    flex: "1",
+    minWidth: "0"
+  });
+
+  const title = document.createElement("strong");
+  title.textContent = labels[type];
+
+  Object.assign(title.style, {
+    display: "block",
+    marginBottom: "5px",
+    fontSize: "13px"
+  });
+
+  const description = document.createElement("p");
+  description.textContent = text;
+
+  Object.assign(description.style, {
+    margin: "0",
+    color: "inherit",
+    fontSize: "12px",
+    lineHeight: "1.7",
+    overflowWrap: "anywhere"
+  });
+
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "toast-close";
+  close.textContent = "×";
+  close.setAttribute("aria-label", "Dismiss notification");
+
+  Object.assign(close.style, {
+    width: "28px",
+    height: "28px",
+    flexShrink: "0",
+    padding: "0",
+    border: "0",
+    borderRadius: "6px",
+    background: "transparent",
+    color: "inherit",
+    fontSize: "21px",
+    cursor: "pointer"
+  });
+
+  close.addEventListener("click", () => {
+    clearTimeout(dashboardToastTimer);
+    toast.remove();
+  });
+
+  content.append(title, description);
+  toast.append(icon, content, close);
+  document.body.append(toast);
+
+  function scheduleDismiss() {
+    clearTimeout(dashboardToastTimer);
+
+    if (type !== "success") return;
+
+    dashboardToastTimer = setTimeout(() => {
+      if (
+        toast.isConnected &&
+        !toast.matches(":hover, :focus-within")
+      ) {
+        toast.remove();
+      }
+    }, 6000);
+  }
+
+  toast.addEventListener("pointerenter", () => {
+    clearTimeout(dashboardToastTimer);
+  });
+
+  toast.addEventListener("focusin", () => {
+    clearTimeout(dashboardToastTimer);
+  });
+
+  toast.addEventListener("pointerleave", scheduleDismiss);
+  toast.addEventListener("focusout", scheduleDismiss);
+
+  scheduleDismiss();
+}
+
 // Profile
 
 function fillAvatar(target, user) {
+  if (!target) return;
+
   const name = user.displayName || user.email || "Admin";
 
   target.textContent = name
@@ -138,13 +393,10 @@ function fillAvatar(target, user) {
     image.alt = "";
     image.referrerPolicy = "no-referrer";
 
-    image.addEventListener("error", () => {
-      image.remove();
-    });
-
+    image.addEventListener("error", () => image.remove());
     target.append(image);
   } catch {
-    // Keep initials if no valid profile photo is available.
+    // Keep initials if the profile photo is unavailable.
   }
 }
 
@@ -154,6 +406,7 @@ function fillProfile(user) {
 
   $("profile-name").textContent = user.displayName || "Admin";
   $("profile-email").textContent = user.email || "No email provided";
+
   $("profile-role").textContent =
     "Admin / Librarian · Email verified";
 
@@ -196,22 +449,24 @@ function showProfile() {
   form.method = "dialog";
 
   const actions = node("div", "dialog-actions");
-  const closeButton = node("button", "ui-neutral", "Close");
-  closeButton.autofocus = true;
+  const close = node("button", "ui-neutral", "Close");
+  close.autofocus = true;
 
-  actions.append(closeButton);
+  actions.append(close);
   form.append(actions);
   dialog.append(heading, details, form);
 
-  dialog.addEventListener("close", () => {
-    dialog.remove();
-  }, { once: true });
+  dialog.addEventListener(
+    "close",
+    () => dialog.remove(),
+    { once: true }
+  );
 
   document.body.append(dialog);
   dialog.showModal();
 }
 
-// Reusable Yes / No confirmation
+// Confirmation dialog
 
 function ask(
   title,
@@ -257,6 +512,7 @@ function ask(
   `;
 
   dialog.setAttribute("aria-labelledby", "confirmation-title");
+
   dialog.setAttribute(
     "aria-describedby",
     "confirmation-description"
@@ -276,21 +532,19 @@ function ask(
 
   return new Promise((resolve) => {
     dialog.addEventListener("close", () => {
-      const result = dialog.returnValue === "confirm"
-        ? {
-            reason: $("confirmation-reason").value.trim()
-          }
+      const answer = dialog.returnValue === "confirm"
+        ? { reason: $("confirmation-reason").value.trim() }
         : null;
 
       dialog.remove();
-      resolve(result);
+      resolve(answer);
     }, { once: true });
 
     dialog.showModal();
   });
 }
 
-// Dashboard and navigation
+// Dashboard
 
 function refresh() {
   const pending = requests.filter(
@@ -311,9 +565,7 @@ function refresh() {
           const copies = book.availableCopies;
 
           return sum + (
-            Number.isInteger(copies) && copies >= 0
-              ? copies
-              : 0
+            Number.isInteger(copies) && copies >= 0 ? copies : 0
           );
         }, 0)
       : "—";
@@ -371,7 +623,7 @@ function actionButton(text, className, request, action) {
   return button;
 }
 
-// Borrowing records
+// Borrow requests
 
 function renderRequests() {
   const container = $("request-list");
@@ -383,7 +635,6 @@ function renderRequests() {
       "empty",
       requestsError || "Loading requests..."
     ));
-
     return;
   }
 
@@ -399,7 +650,6 @@ function renderRequests() {
       "empty",
       "No records in this section yet."
     ));
-
     return;
   }
 
@@ -517,7 +767,7 @@ async function processRequest(request, action) {
       throw new Error("Please enter a rejection reason.");
     }
 
-    message("Processing request...");
+    message("Processing request...", false, "info");
 
     await runTransaction(db, async (transaction) => {
       const requestRef = doc(db, "borrowRequests", request.id);
@@ -528,9 +778,11 @@ async function processRequest(request, action) {
       }
 
       const data = snapshot.data();
-      const expected = action === "return" ? "approved" : "pending";
 
-      if (data.status !== expected) {
+      const expectedStatus =
+        action === "return" ? "approved" : "pending";
+
+      if (data.status !== expectedStatus) {
         throw new Error("This request has already been processed.");
       }
 
@@ -613,10 +865,12 @@ async function processRequest(request, action) {
     if (session === version) {
       message(
         action === "approve"
-          ? "Approved. One copy issued for 7 days."
+          ? "Request approved successfully. One copy issued for 7 days."
           : action === "reject"
-            ? "Request rejected. Inventory unchanged."
-            : "Return recorded. One copy restored."
+            ? "Request rejected successfully. Inventory unchanged."
+            : "Book returned successfully. One copy restored.",
+        false,
+        "success"
       );
     }
   } catch (error) {
@@ -637,85 +891,182 @@ async function processRequest(request, action) {
   }
 }
 
-// Book catalogue
+// Merge the student catalogue with Firestore inventory
+
+function adminCatalogueBooks() {
+  const merged = new Map(
+    studentCatalogueDefaults.map((book) => [
+      book.id,
+      {
+        ...book,
+        registered: false
+      }
+    ])
+  );
+
+  books.forEach((data, id) => {
+    const previous = merged.get(id);
+
+    merged.set(id, {
+      color: "#738baa",
+      ink: "#ffffff",
+      ...previous,
+      ...data,
+      id,
+      registered: true,
+      title: data.title || previous?.title || id,
+      author: data.author || previous?.author || "Unknown author",
+      category: data.category || previous?.category || "General"
+    });
+  });
+
+  return [...merged.values()].sort((a, b) =>
+    a.title.localeCompare(b.title)
+  );
+}
+
+// Manage Books
 
 function renderBooks() {
   const container = $("book-list");
+
   container.replaceChildren();
+  container.classList.add("admin-book-grid");
 
   if (booksError || !booksLoaded) {
     container.append(node(
       "p",
-      "empty",
+      "empty admin-catalogue-empty",
       booksError || "Loading books..."
     ));
-
     return;
   }
 
-  if (!books.size) {
-    container.append(node(
-      "p",
-      "empty",
-      "No books yet. Add your first book above."
-    ));
+  for (const book of adminCatalogueBooks()) {
+    const card = node("article", "admin-book-card");
+    const cover = node("div", "admin-book-cover");
 
-    return;
+    cover.style.backgroundColor = book.color;
+    cover.style.color = book.ink;
+
+    cover.append(
+      node("span", "admin-cover-author", book.author),
+      node("span", "admin-cover-title", book.title),
+      node("span", "admin-cover-category", book.category)
+    );
+
+    const copies = book.availableCopies;
+    const validCopies = Number.isInteger(copies) && copies >= 0;
+
+    const state = !book.registered
+      ? "Not registered"
+      : !validCopies
+        ? "Check inventory"
+        : copies > 0
+          ? "Available"
+          : "Unavailable";
+
+    const badge = node("span", "admin-book-badge", state);
+
+    badge.classList.add(
+      !book.registered || !validCopies
+        ? "needs-setup"
+        : copies > 0
+          ? "available"
+          : "unavailable"
+    );
+
+    const details = node("div", "admin-book-details");
+
+    details.append(
+      node("h3", "", book.title),
+      node("p", "", book.author),
+      node("p", "", `Category: ${book.category}`),
+      node("p", "", `Book ID: ${book.id}`),
+      badge
+    );
+
+    if (book.registered) {
+      details.append(node(
+        "p",
+        "admin-book-stock",
+        validCopies
+          ? `${copies} available ${copies === 1 ? "copy" : "copies"}`
+          : "Available copies need correcting in the inventory."
+      ));
+    } else {
+      details.append(node(
+        "p",
+        "admin-book-stock",
+        "Shown in the student catalogue. Add inventory before borrowing."
+      ));
+
+      const button = node(
+        "button",
+        "primary admin-register-book",
+        "Register book"
+      );
+
+      button.type = "button";
+
+      button.addEventListener("click", () => {
+        if ($("save-book").disabled) return;
+
+        $("book-id").value = book.id;
+        $("book-title").value = book.title;
+        $("book-author").value = book.author;
+        $("book-category").value = book.category;
+        $("book-copies").value = "";
+
+        const reduceMotion = window.matchMedia(
+          "(prefers-reduced-motion: reduce)"
+        ).matches;
+
+        $("book-form").scrollIntoView({
+          behavior: reduceMotion ? "auto" : "smooth",
+          block: "center"
+        });
+
+        $("book-copies").focus({
+          preventScroll: true
+        });
+
+        message(
+          "Enter the actual available copies, then click Add Book.",
+          false,
+          "info"
+        );
+      });
+
+      details.append(button);
+    }
+
+    card.append(cover, details);
+    container.append(card);
   }
-
-  [...books.entries()]
-    .sort((a, b) =>
-      String(a[1].title || a[0]).localeCompare(
-        String(b[1].title || b[0])
-      )
-    )
-    .forEach(([id, book]) => {
-      const card = node("article", "record");
-      const details = node("div", "record-details");
-
-      details.append(
-        node("h3", "", book.title || id),
-        node(
-          "p",
-          "",
-          `${book.author || "Unknown author"} · ${
-            book.category || "General"
-          }`
-        ),
-        node("p", "", `Book ID: ${id}`)
-      );
-
-      card.append(
-        details,
-        node(
-          "span",
-          "badge",
-          Number.isInteger(book.availableCopies)
-            ? `${book.availableCopies} available`
-            : "Inventory needs updating"
-        )
-      );
-
-      container.append(card);
-    });
 }
+
+// Add Book
 
 $("book-form").addEventListener("submit", async (event) => {
   event.preventDefault();
 
   if (!currentUser || $("save-book").disabled) return;
+  if (!$("book-form").reportValidity()) return;
 
   const id = $("book-id").value.trim();
   const title = $("book-title").value.trim();
   const author = $("book-author").value.trim();
   const category = $("book-category").value.trim();
-  const copies = Number($("book-copies").value);
+  const copiesText = $("book-copies").value.trim();
+  const copies = Number(copiesText);
 
   if (
     !/^[a-zA-Z0-9-]+$/.test(id) ||
     !title ||
     !author ||
     !category ||
+    copiesText === "" ||
     !Number.isSafeInteger(copies) ||
     copies < 0 ||
     copies > 100000
@@ -728,6 +1079,8 @@ $("book-form").addEventListener("submit", async (event) => {
 
   $("save-book").disabled = true;
   $("save-book").textContent = "Saving...";
+
+  message("Saving book...", false, "info");
 
   try {
     await runTransaction(db, async (transaction) => {
@@ -749,9 +1102,15 @@ $("book-form").addEventListener("submit", async (event) => {
       });
     });
 
+    // Show green success only after Firestore confirms the save.
     if (session === version) {
       $("book-form").reset();
-      message("Book added to the library catalogue.");
+
+      message(
+        "Book added successfully.",
+        false,
+        "success"
+      );
     }
   } catch (error) {
     if (session === version) {
@@ -768,7 +1127,7 @@ $("book-form").addEventListener("submit", async (event) => {
   }
 });
 
-// Menu events
+// Navigation and dropdowns
 
 document.querySelectorAll("[data-view]").forEach((button) => {
   button.addEventListener("click", () => {
@@ -779,6 +1138,9 @@ document.querySelectorAll("[data-view]").forEach((button) => {
 document.querySelectorAll("[data-dropdown]").forEach((button) => {
   button.addEventListener("click", () => {
     const panel = $(button.dataset.dropdown);
+
+    if (!panel) return;
+
     const open = panel.hidden;
 
     closeMenus();
@@ -805,6 +1167,7 @@ document.querySelectorAll("[data-logout]").forEach((button) => {
     if (!currentUser || loggingOut) return;
 
     loggingOut = true;
+
     const session = version;
 
     try {
@@ -817,8 +1180,8 @@ document.querySelectorAll("[data-logout]").forEach((button) => {
 
       if (!answer || session !== version) return;
 
-     await signOut(auth);
-window.location.replace("../login.html");
+      await signOut(auth);
+      window.location.replace("../login.html");
     } catch {
       message(
         "Unable to log out. Check your connection and try again.",
@@ -837,7 +1200,11 @@ $("menu-button").addEventListener("click", () => {
 
   $("sidebar").classList.toggle("open", open);
   $("shade").hidden = !open;
-  $("menu-button").setAttribute("aria-expanded", String(open));
+
+  $("menu-button").setAttribute(
+    "aria-expanded",
+    String(open)
+  );
 });
 
 $("shade").addEventListener("click", closeSidebar);
@@ -858,7 +1225,7 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-// Authentication and live records
+// Authentication and live data
 
 onAuthStateChanged(auth, async (user) => {
   const session = ++version;
@@ -876,16 +1243,21 @@ onAuthStateChanged(auth, async (user) => {
   booksError = "";
   requestsError = "";
 
+  message("");
+
   $("app").hidden = true;
-$("loading").hidden = true;
-$("loading").textContent = "";
+  $("loading").hidden = true;
+  $("loading").textContent = "";
+
   if (!user || !user.emailVerified) {
-    window.location.replace("./login.html");
+    window.location.replace("../login.html");
     return;
   }
 
   try {
-    const role = await getDoc(doc(db, "roles", user.uid));
+    const role = await getDoc(
+      doc(db, "roles", user.uid)
+    );
 
     if (
       session !== version ||
@@ -899,7 +1271,7 @@ $("loading").textContent = "";
       : "student";
 
     if (value === "student") {
-      window.location.replace("./student.html");
+      window.location.replace("../student.html");
       return;
     }
 
@@ -927,7 +1299,10 @@ $("loading").textContent = "";
         booksError = "";
 
         books = new Map(
-          snapshot.docs.map((item) => [item.id, item.data()])
+          snapshot.docs.map((item) => [
+            item.id,
+            item.data()
+          ])
         );
 
         refresh();
@@ -936,7 +1311,9 @@ $("loading").textContent = "";
       (error) => {
         if (session !== version) return;
 
-        booksError = `Unable to load inventory (${error.code}).`;
+        booksError =
+          `Unable to load inventory (${error.code}).`;
+
         refresh();
       }
     );
@@ -974,12 +1351,12 @@ $("loading").textContent = "";
       }
     );
   } catch (error) {
-  if (session !== version) return;
+    if (session !== version) return;
 
-  $("loading").hidden = false;
+    $("loading").hidden = false;
 
-  $("loading").textContent = error.code
-    ? `Unable to verify admin (${error.code}). Check your connection and Firestore Rules.`
-    : error.message;
-}
+    $("loading").textContent = error.code
+      ? `Unable to verify admin (${error.code}). Check your connection and Firestore Rules.`
+      : error.message;
+  }
 });
