@@ -49,6 +49,114 @@ let stopRequests = null;
 let version = 0;
 let loggingOut = false;
 let toastTimer = null;
+let overdueSignature = "";
+const borrowerProfiles = new Map();
+const profileSubscriptions = new Map();
+
+function isOverdue(request, now = Date.now()) {
+  const due = request.dueAt?.toMillis?.();
+  return request.status === "approved" && Number.isFinite(due) && due <= now;
+}
+
+function stopBorrowerProfiles() {
+  profileSubscriptions.forEach((stop) => stop());
+  profileSubscriptions.clear();
+  borrowerProfiles.clear();
+}
+
+function syncBorrowerProfiles(session) {
+  const uids = new Set(requests.map((request) => request.studentUid)
+    .filter((uid) => typeof uid === "string" && uid && !uid.includes("/")));
+  for (const [uid, stop] of profileSubscriptions) {
+    if (!uids.has(uid)) {
+      stop();
+      profileSubscriptions.delete(uid);
+      borrowerProfiles.delete(uid);
+    }
+  }
+  for (const uid of uids) {
+    if (profileSubscriptions.has(uid)) continue;
+    borrowerProfiles.set(uid, { state: "loading" });
+    const stop = onSnapshot(doc(db, "users", uid), (snapshot) => {
+      if (session !== version) return;
+      borrowerProfiles.set(uid, snapshot.exists()
+        ? { state: "ready", data: snapshot.data() }
+        : { state: "missing" });
+      renderRequests();
+      renderNotifications();
+    }, (error) => {
+      if (session !== version) return;
+      borrowerProfiles.set(uid, { state: "error", code: error.code });
+      renderRequests();
+      renderNotifications();
+    });
+    profileSubscriptions.set(uid, stop);
+  }
+}
+
+function borrowerName(uid) {
+  const profile = borrowerProfiles.get(uid);
+  return profile?.state === "ready" && profile.data.fullName
+    ? profile.data.fullName : uid || "Unknown borrower";
+}
+
+function appendBorrowerDetails(details, uid) {
+  const profile = borrowerProfiles.get(uid);
+  if (profile?.state === "ready") {
+    const data = profile.data;
+    details.append(
+      node("p", "borrower-name", `Borrower: ${data.fullName || "Not provided"}`),
+      node("p", "", `Student ID: ${data.studentId || "Not provided"}`),
+      node("p", "", `Course: ${data.course || "Not provided"}`),
+      node("p", "", `Email: ${data.email || "Not provided"}`)
+    );
+  } else {
+    details.append(node("p", "profile-note", profile?.state === "error"
+      ? `Unable to read borrower profile (${profile.code}). Check Firestore Rules.`
+      : profile?.state === "missing"
+        ? "Student profile not provided. Ask the borrower to complete Settings."
+        : "Loading borrower profile..."));
+  }
+  details.append(node("p", "borrower-uid", `Borrower UID: ${uid || "Not recorded"}`));
+}
+
+function eventMillis(request) {
+  const value = request.cancelledAt || request.returnedAt || request.reviewedAt
+    || request.approvedAt || request.requestedAt;
+  return value?.toMillis?.() || 0;
+}
+
+function renderNotifications() {
+  const pending = requests.filter((request) => request.status === "pending").length;
+  const overdue = requests.filter((request) => isOverdue(request)).length;
+  $("admin-notification-text").textContent = requestsError || (!requestsLoaded
+    ? "Loading requests..."
+    : `${pending} pending requests · ${overdue} overdue books`);
+  const container = $("admin-notification-list");
+  container.replaceChildren();
+  if (requestsError || !requestsLoaded) return;
+  const recent = [...requests].sort((a, b) =>
+    Number(isOverdue(b)) - Number(isOverdue(a)) || eventMillis(b) - eventMillis(a)
+  ).slice(0, 5);
+  if (!recent.length) {
+    container.append(node("p", "", "No borrowing updates yet."));
+  }
+  for (const request of recent) {
+    const overdue = isOverdue(request);
+    const button = node("button", `notification-item${overdue ? " notification-overdue" : ""}`);
+    const label = overdue ? "Overdue" : ({ pending: "Pending request", approved: "Borrowed",
+      returned: "Returned", rejected: "Rejected", cancelled: "Cancelled by student" }[request.status] || request.status);
+    button.type = "button";
+    button.append(node("strong", "", `${label}: ${titleFor(request.bookId)}`),
+      node("span", "", borrowerName(request.studentUid)),
+      node("span", "", overdue ? `Due: ${dateText(request.dueAt)}`
+        : dateText(request.cancelledAt || request.returnedAt || request.reviewedAt || request.approvedAt || request.requestedAt)));
+    button.addEventListener("click", () => setView(request.status === "pending" ? "pending"
+      : request.status === "approved" ? "approved" : "history"));
+    container.append(button);
+  }
+}
+
 
 const processing = new Set();
 
@@ -78,7 +186,7 @@ const pages = {
   ],
   history: [
     "Borrowing history",
-    "Review returned books and declined requests."
+    "Review returned books, declined requests, and student cancellations."
   ],
   books: [
     "Manage books",
@@ -399,12 +507,9 @@ function refresh() {
         }, 0)
       : "—";
 
-  $("admin-notification-text").textContent =
-    requestsError || (
-      !requestsLoaded
-        ? "Loading requests..."
-        : `${pending} pending borrow requests. Open Borrow Requests to review.`
-    );
+  $("overdue-count").textContent = requestsLoaded && !requestsError
+    ? requests.filter((request) => isOverdue(request)).length : "—";
+  renderNotifications();
 
   renderRequests();
   renderBooks();
@@ -465,7 +570,7 @@ function renderRequests() {
 
   const rows = requests.filter((request) =>
     currentView === "history"
-      ? ["returned", "rejected"].includes(request.status)
+      ? ["returned", "rejected", "cancelled"].includes(request.status)
       : request.status === currentView
   );
 
@@ -478,14 +583,19 @@ function renderRequests() {
     return;
   }
 
+  rows.sort((a, b) => currentView === "approved"
+    ? Number(isOverdue(b)) - Number(isOverdue(a)) || (a.dueAt?.toMillis?.() || Infinity) - (b.dueAt?.toMillis?.() || Infinity)
+    : currentView === "history" ? eventMillis(b) - eventMillis(a)
+    : (b.requestedAt?.toMillis?.() || 0) - (a.requestedAt?.toMillis?.() || 0));
+
   rows.forEach((request) => {
-    const card = node("article", "record");
+    const card = node("article", `record${isOverdue(request) ? " record-overdue" : ""}`);
     const details = node("div", "record-details");
     const actions = node("div", "record-actions");
 
+    details.append(node("h3", "", titleFor(request.bookId)));
+    appendBorrowerDetails(details, request.studentUid);
     details.append(
-      node("h3", "", titleFor(request.bookId)),
-      node("p", "", `Borrower UID: ${request.studentUid}`),
       node(
         "p",
         "request-timestamp",
@@ -523,6 +633,11 @@ function renderRequests() {
         actionButton("Reject", "danger", request, "reject")
       );
     } else if (request.status === "approved") {
+      actions.append(node("span", isOverdue(request) ? "badge badge-overdue" : "badge badge-approved",
+        isOverdue(request) ? "Overdue" : "Borrowed"));
+      if (isOverdue(request)) {
+        details.append(node("p", "overdue-reminder", "Past the due date. Follow up with the borrower for return."));
+      }
       if (request.approvedAt) {
         details.append(node(
           "p",
@@ -538,7 +653,7 @@ function renderRequests() {
       ));
 
       actions.append(actionButton(
-        "Mark Returned",
+      "Mark Returned?",
         "secondary",
         request,
         "return"
@@ -560,11 +675,28 @@ function renderRequests() {
         ));
       }
 
+      if (request.status === "cancelled") {
+        details.append(node("p", "request-timestamp", `Cancelled: ${dateText(request.cancelledAt)}`));
+        details.append(node("p", "", "Cancelled by the student before approval. No copy was issued."));
+      }
+
       if (request.reason) {
         details.append(node("p", "", request.reason));
       }
 
-      actions.append(node("span", "badge", request.status));
+     const statusLabels = {
+  returned: "Returned",
+  rejected: "Rejected",
+  cancelled: "Cancelled"
+};
+
+actions.append(
+  node(
+    "span",
+    `badge badge-${request.status}`,
+    statusLabels[request.status] || request.status
+  )
+);
     }
 
     card.append(details, actions);
@@ -573,7 +705,7 @@ function renderRequests() {
 }
 
 async function processRequest(request, action) {
-  if (!currentUser || processing.has(request.id)) return;
+  if (!currentUser || processing.has(request.id) || document.querySelector("dialog[open]") || !["approve", "reject", "return"].includes(action)) return;
 
   const session = version;
   const user = currentUser;
@@ -606,7 +738,7 @@ async function processRequest(request, action) {
       action === "reject"
     );
 
-    if (!answer || session !== version) return;
+    if (!answer || session !== version || auth.currentUser?.uid !== user.uid) return;
 
     if (action === "reject" && !answer.reason) {
       throw new Error("Please enter a rejection reason.");
@@ -1045,6 +1177,9 @@ onAuthStateChanged(auth, async (user) => {
 
   stopBooks?.();
   stopRequests?.();
+  stopBorrowerProfiles();
+  overdueSignature = "";
+  document.querySelectorAll("dialog[open]").forEach((dialog) => dialog.close());
 
   currentUser = null;
   books = new Map();
@@ -1139,6 +1274,7 @@ onAuthStateChanged(auth, async (user) => {
             (a.requestedAt?.toMillis?.() || 0)
         );
 
+        syncBorrowerProfiles(session);
         refresh();
       },
       (error) => {
@@ -1193,6 +1329,18 @@ function updateDashboardClock() {
   target.dateTime = now.toISOString();
   date.textContent = clockDateFormatter.format(now);
   time.textContent = `${clockTimeFormatter.format(now)} PHT`;
+
+  const signature = requests.filter((request) => request.status === "approved")
+    .map((request) => `${request.id}:${isOverdue(request, now.getTime())}`).sort().join("|");
+  if (signature !== overdueSignature) {
+    overdueSignature = signature;
+    if (currentUser) {
+      $("overdue-count").textContent = requestsLoaded && !requestsError
+        ? requests.filter((request) => isOverdue(request, now.getTime())).length : "—";
+      if (currentView === "approved") renderRequests();
+      renderNotifications();
+    }
+  }
 }
 
 function startDashboardClock() {

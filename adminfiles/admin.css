@@ -413,7 +413,7 @@ h2 {
 
 .stats {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
   margin: 25px 0;
 }
@@ -1074,4 +1074,53 @@ body:has(#loading:not([hidden]):not(:empty)) #page-loader {
     width: 100%;
     animation: none;
   }
+}
+/* Borrower identity, cancelled history, and overdue tracking */
+.record .borrower-name { color: var(--text); font-weight: 700; font-size: 13px; }
+.record .borrower-uid { font-size: 11px; }
+.record .profile-note { color: #805914; }
+.record-overdue { border-color: #f4bac4; background: #fff8f9; }
+.record .overdue-reminder { color: #a71938; font-weight: 600; }
+.badge-overdue, .badge-rejected { background: #ffe8ed; color: #a71938; }
+.badge-approved, .badge-returned { background: #e5f5ec; color: #166534; }
+.badge-cancelled { background: #edf2fa; color: #526078; }
+.badge { align-self: center; }
+.overdue-stat strong { color: #a71938; }
+.dropdown .notification-item { padding: 12px; line-height: 1.6; }
+.notification-item strong, .notification-item span { display: block; overflow-wrap: anywhere; }
+.notification-item span { color: var(--muted); font-size: 11px; margin-top: 4px; }
+.dropdown .notification-overdue { background: #fff1f3; color: #a71938; }
+@media (max-width: 1100px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* Borrowed status — blue */
+.badge-approved {
+  background: #dbeafe;
+  color: #1e40af;
+  font-weight: 700;
+}
+
+/* Mark Returned button — green */
+.record-actions .secondary {
+  background: #15803d;
+  color: #ffffff;
+}
+
+.record-actions .secondary:hover:not(:disabled) {
+  background: #166534;
+}
+
+/* Returned status — green */
+.badge-returned {
+  background: #dcfce7;
+  color: #166534;
+  font-weight: 700;
+}
+/* Mark Returned — yellow */
+.record-actions .secondary {
+  background: #facc15;
+  color: #422006;
+  font-weight: 700;
+}
+
+.record-actions .secondary:hover:not(:disabled) {
+  background: #eab308;
 }

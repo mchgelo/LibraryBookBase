@@ -7,7 +7,7 @@
   <title>BookBase | Student Library</title>
 
   <link rel="stylesheet" href="./student.css">
-  <script type="module" src="./student.js?v=student-clock-1"></script>
+  <script type="module" src="./student.js?v=student-profile-1"></script>
 </head>
 
 <body>
@@ -20,8 +20,7 @@
        aria-hidden="true">
 
     <symbol id="i-book" viewBox="0 0 24 24">
-      <path d="M12 5C8 2 4 3 2 4v15c4-1 7 0 10 2 3-2 6-3 10-2V4c-3-1-6-2-10 1Z"/>
-      <path d="M12 5v16"/>
+      <path d="M12 5C8 2 4 3 2 4v15c4-1 7 0 10 2 3-2 6-3 10-2V4c-3-1-6-2-10 1ZM12 5v16"/>
     </symbol>
 
     <symbol id="i-home" viewBox="0 0 24 24">
@@ -240,7 +239,6 @@
           <div>
             <p class="eyebrow">STUDENT LIBRARY</p>
             <h1 id="page-title">Book Catalogue</h1>
-
             <p id="page-description">
               Check availability and request a book from your library.
             </p>
@@ -253,6 +251,11 @@
             <span id="clock-time" class="clock-time"></span>
           </time>
         </div>
+
+        <div id="profile-notice"
+             class="profile-notice"
+             role="status"
+             hidden></div>
 
         <section class="panel" aria-labelledby="section-title">
           <div class="panel-heading">

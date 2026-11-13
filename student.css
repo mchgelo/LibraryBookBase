@@ -233,7 +233,7 @@ input:focus-visible {
   height: 20px;
 }
 
-/* Profile */
+/* Profile header */
 .profile-button {
   display: flex;
   align-items: center;
@@ -368,7 +368,11 @@ input:focus-visible {
   line-height: 1.6;
 }
 
-/* Content and live clock */
+.overdue-notification p {
+  color: #b42318;
+}
+
+/* Main content */
 .content {
   max-width: 1450px;
   margin: auto;
@@ -453,6 +457,98 @@ h1 {
 .count {
   color: var(--muted);
   font-size: 12px;
+}
+
+/* Profile notice and form */
+.profile-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding: 15px 18px;
+  border: 1px solid #f0d58d;
+  border-radius: 12px;
+  background: #fff8e5;
+  color: #795814;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.profile-notice-button {
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--yellow);
+  color: #3b2f00;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.student-profile-form {
+  max-width: 720px;
+}
+
+.student-profile-form h3 {
+  margin: 0 0 10px;
+  font-size: 18px;
+}
+
+.profile-help {
+  margin: 0 0 20px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.profile-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-bottom: 20px;
+}
+
+.profile-field {
+  display: grid;
+  gap: 9px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.profile-field input {
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  padding: 12px 14px;
+  border: 1px solid #d7e1ed;
+  border-radius: 9px;
+  background: #fbfcff;
+  color: var(--text);
+  font-size: 16px;
+}
+
+.profile-field input[readonly] {
+  background: #f0f3f8;
+  color: var(--muted);
+}
+
+.profile-save-button {
+  min-height: 44px;
+  padding: 12px 20px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--blue);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.profile-error {
+  color: #b42318;
+  font-size: 12px;
+  line-height: 1.7;
 }
 
 /* Categories */
@@ -657,6 +753,14 @@ h1 {
   overflow-wrap: anywhere;
 }
 
+.loan-card-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex-shrink: 0;
+  gap: 12px;
+}
+
 .loan-status {
   flex-shrink: 0;
   padding: 7px 10px;
@@ -681,6 +785,41 @@ h1 {
 .loan-status.rejected {
   background: #fce8ec;
   color: #b54560;
+}
+
+.loan-status.cancelled {
+  background: #edf0f5;
+  color: #526174;
+}
+
+.loan-status.overdue {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.loan-card.overdue-card {
+  border-color: #efb6b6;
+  background: #fffafa;
+}
+
+.loan-card .overdue-reminder {
+  color: #b42318;
+  font-weight: 600;
+}
+
+.cancel-request-button {
+  min-height: 40px;
+  padding: 10px 13px;
+  border: 1px solid #efc4cd;
+  border-radius: 8px;
+  background: #fff1f3;
+  color: #a71938;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.cancel-request-button:hover:not(:disabled) {
+  background: #ffe2e8;
 }
 
 .detail-box {
@@ -724,7 +863,7 @@ h1 {
   line-height: 1.8;
 }
 
-/* Confirmation and profile dialogs */
+/* Dialogs */
 .student-dialog {
   width: min(440px, calc(100% - 32px));
   max-height: 85vh;
@@ -804,7 +943,7 @@ h1 {
   margin: 7px 0 0;
 }
 
-/* Toast notifications */
+/* Toasts */
 .student-toast {
   position: fixed;
   top: 104px;
@@ -915,15 +1054,11 @@ body:has(#loading:not([hidden]):not(:empty)) #page-loader {
 }
 
 @keyframes page-loading {
-  from {
-    transform: translateX(-100%);
-  }
-  to {
-    transform: translateX(390%);
-  }
+  from { transform: translateX(-100%); }
+  to { transform: translateX(390%); }
 }
 
-/* Responsive layout */
+/* Responsive */
 @media (min-width: 1500px) {
   .book-grid {
     grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -1010,6 +1145,26 @@ body:has(#loading:not([hidden]):not(:empty)) #page-loader {
     font-size: 11px;
     text-align: left;
   }
+
+  .profile-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-save-button {
+    width: 100%;
+  }
+
+  .loan-card {
+    flex-direction: column;
+  }
+
+  .loan-card-actions {
+    width: 100%;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
 }
 
 @media (max-width: 520px) {
@@ -1037,10 +1192,6 @@ body:has(#loading:not([hidden]):not(:empty)) #page-loader {
 
   .panel {
     padding: 18px;
-  }
-
-  .loan-card {
-    flex-direction: column;
   }
 
   .student-dialog {

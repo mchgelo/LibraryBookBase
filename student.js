@@ -13,6 +13,7 @@ import {
   collection,
   doc,
   getDoc,
+  setDoc,
   query,
   where,
   onSnapshot,
@@ -35,7 +36,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const $ = (id) => document.getElementById(id);
 
-// Display books. Available copies come from Firestore.
+// Catalogue display examples
 const sampleBooks = [
   ["money", "The Psychology of Money", "Morgan Housel", "Finance", "#789483", "#ffffff"],
   ["innovation", "How Innovation Works", "Matt Ridley", "Science", "#f5d52c", "#263b42"],
@@ -62,12 +63,12 @@ const views = {
   ],
   library: [
     "My borrowed books",
-    "Track pending requests and approved loans.",
+    "Track pending requests, approved loans, and due dates.",
     "Current borrowing"
   ],
   history: [
     "Borrowing history",
-    "Review returned books and declined requests.",
+    "Review returned books, declined requests, and cancellations.",
     "Past transactions"
   ],
   favourite: [
@@ -77,8 +78,8 @@ const views = {
   ],
   settings: [
     "Account settings",
-    "Your student account information.",
-    "Profile details"
+    "Complete your student details before borrowing.",
+    "Student profile"
   ],
   support: [
     "Library support",
@@ -104,13 +105,21 @@ let requestsError = "";
 
 let stopBooks = null;
 let stopRequests = null;
+let stopProfile = null;
 let sessionVersion = 0;
+
+let studentProfile = {};
+let profileReady = false;
+let profileError = "";
+let profileSaving = false;
 
 let toastTimer = null;
 let activeDialog = null;
 let loggingOut = false;
+let overdueSignature = "";
 
 const sending = new Set();
+const cancelling = new Set();
 
 // Helpers
 function element(tag, className = "", text) {
@@ -131,7 +140,6 @@ function createIcon(name) {
 
   svg.classList.add("icon");
   svg.setAttribute("aria-hidden", "true");
-
   use.setAttribute("href", `#i-${name}`);
   svg.append(use);
 
@@ -165,7 +173,6 @@ function bookTitle(id) {
   return catalogueBooks().find((book) => book.id === id)?.title || id;
 }
 
-// Actual Firestore timestamp, displayed in Philippine time.
 function formatDate(value, includeTime = true) {
   if (!value?.toDate) return "Awaiting server timestamp";
 
@@ -183,10 +190,32 @@ function formatDate(value, includeTime = true) {
     .format(value.toDate()) + (includeTime ? " PHT" : "");
 }
 
+function studentName(user = currentUser) {
+  return studentProfile.fullName ||
+    user?.displayName ||
+    user?.email ||
+    "Student";
+}
+
+function profileComplete() {
+  return ["fullName", "studentId", "course"].every(
+    (key) =>
+      typeof studentProfile[key] === "string" &&
+      studentProfile[key].trim()
+  );
+}
+
+function isOverdue(request, now = Date.now()) {
+  const due = request.dueAt?.toMillis?.();
+
+  return request.status === "approved" &&
+    typeof due === "number" &&
+    due <= now;
+}
+
 function closeDropdowns() {
   document.querySelectorAll("[data-dropdown]").forEach((button) => {
     const panel = $(button.dataset.dropdown);
-
     if (panel) panel.hidden = true;
 
     button.setAttribute("aria-expanded", "false");
@@ -199,7 +228,7 @@ function closeSidebar() {
   $("menu-button").setAttribute("aria-expanded", "false");
 }
 
-// Toast notifications
+// Notifications
 function studentMessage(text, error = false, kind = "success") {
   clearTimeout(toastTimer);
   $("student-toast")?.remove();
@@ -228,12 +257,7 @@ function studentMessage(text, error = false, kind = "success") {
   const toast = element("div", `student-toast ${type}`);
   toast.id = "student-toast";
 
-  const icon = element(
-    "span",
-    "student-toast-icon",
-    symbols[type]
-  );
-
+  const icon = element("span", "student-toast-icon", symbols[type]);
   icon.setAttribute("aria-hidden", "true");
 
   const content = element("div", "student-toast-content");
@@ -245,12 +269,7 @@ function studentMessage(text, error = false, kind = "success") {
     element("p", "", text)
   );
 
-  const close = element(
-    "button",
-    "student-toast-close",
-    "×"
-  );
-
+  const close = element("button", "student-toast-close", "×");
   close.type = "button";
   close.setAttribute("aria-label", "Dismiss notification");
 
@@ -264,7 +283,6 @@ function studentMessage(text, error = false, kind = "success") {
 
   function dismissLater() {
     clearTimeout(toastTimer);
-
     if (type !== "success") return;
 
     toastTimer = setTimeout(() => {
@@ -299,20 +317,14 @@ function confirmAction(
   book = null,
   danger = false
 ) {
-  if (activeDialog?.open) {
-    return Promise.resolve(false);
-  }
+  if (activeDialog?.open) return Promise.resolve(false);
 
   closeDropdowns();
 
   const dialog = element("dialog", "student-dialog");
   activeDialog = dialog;
 
-  dialog.setAttribute(
-    "aria-labelledby",
-    "student-confirm-title"
-  );
-
+  dialog.setAttribute("aria-labelledby", "student-confirm-title");
   dialog.setAttribute(
     "aria-describedby",
     "student-confirm-description"
@@ -339,15 +351,12 @@ function confirmAction(
   const explanation = element("p", "", description);
   explanation.id = "student-confirm-description";
 
-  const actions = element(
-    "div",
-    "student-dialog-actions"
-  );
+  const actions = element("div", "student-dialog-actions");
 
   const cancel = element(
     "button",
     "student-stay",
-    danger ? "No, stay" : "No, go back"
+    danger ? "No, keep it" : "No, go back"
   );
 
   cancel.type = "submit";
@@ -385,13 +394,11 @@ function confirmAction(
   });
 }
 
-// Profile
+// Profile display
 function paintAvatar(target, user) {
   if (!target) return;
 
-  const name = user.displayName || user.email || "Student";
-
-  target.textContent = name
+  target.textContent = studentName(user)
     .trim()
     .split(/\s+/)
     .slice(0, 2)
@@ -413,12 +420,12 @@ function paintAvatar(target, user) {
 
     target.append(image);
   } catch {
-    // Keep initials if a profile photo is unavailable.
+    // Keep initials.
   }
 }
 
 function fillProfile(user) {
-  const name = user.displayName || user.email || "Student";
+  const name = studentName(user);
 
   $("header-name").textContent = name;
   $("profile-name").textContent = name;
@@ -429,14 +436,9 @@ function fillProfile(user) {
   let avatar = $("student-profile-avatar");
 
   if (!avatar) {
-    avatar = element(
-      "span",
-      "avatar student-profile-avatar"
-    );
-
+    avatar = element("span", "avatar student-profile-avatar");
     avatar.id = "student-profile-avatar";
     avatar.setAttribute("aria-hidden", "true");
-
     $("profile").prepend(avatar);
   }
 
@@ -445,7 +447,9 @@ function fillProfile(user) {
 
 function profileLines() {
   return [
-    `Name: ${currentUser.displayName || "Student"}`,
+    `Name: ${studentName()}`,
+    `Student ID: ${studentProfile.studentId || "Not provided"}`,
+    `Course / Program: ${studentProfile.course || "Not provided"}`,
     `Email: ${currentUser.email || "Not provided"}`,
     "Account type: Student",
     "Email status: Verified",
@@ -464,11 +468,7 @@ function showProfile() {
   const heading = element("h2", "", "Profile details");
   heading.id = "student-profile-title";
 
-  dialog.setAttribute(
-    "aria-labelledby",
-    "student-profile-title"
-  );
-
+  dialog.setAttribute("aria-labelledby", heading.id);
   dialog.append(heading);
 
   profileLines().forEach((line) => {
@@ -478,11 +478,7 @@ function showProfile() {
   const form = element("form");
   form.method = "dialog";
 
-  const actions = element(
-    "div",
-    "student-dialog-actions"
-  );
-
+  const actions = element("div", "student-dialog-actions");
   const close = element("button", "student-stay", "Close");
   close.autofocus = true;
 
@@ -492,17 +488,253 @@ function showProfile() {
 
   dialog.addEventListener("close", () => {
     dialog.remove();
-
-    if (activeDialog === dialog) {
-      activeDialog = null;
-    }
+    if (activeDialog === dialog) activeDialog = null;
   }, { once: true });
 
   document.body.append(dialog);
   dialog.showModal();
 }
 
-// Live Firestore data
+function updateProfileNotice() {
+  const notice = $("profile-notice");
+  notice.replaceChildren();
+
+  notice.hidden =
+    !profileReady ||
+    (!profileError && profileComplete());
+
+  if (notice.hidden) return;
+
+  notice.append(element(
+    "span",
+    "",
+    profileError ||
+      "Complete your Student ID and course before requesting a book."
+  ));
+
+  const button = element(
+    "button",
+    "profile-notice-button",
+    "Open Settings"
+  );
+
+  button.type = "button";
+  button.dataset.view = "settings";
+  notice.append(button);
+}
+
+// Profile form
+function renderStudentProfile() {
+  const container = $("details");
+  container.replaceChildren();
+
+  if (!profileReady) {
+    container.append(element(
+      "p",
+      "empty",
+      "Loading your student profile..."
+    ));
+    return;
+  }
+
+  const form = element("form", "student-profile-form");
+  form.id = "student-profile-form";
+
+  form.append(
+    element("h3", "", "Student profile"),
+    element(
+      "p",
+      "profile-help",
+      "Your Student ID and course will be visible to the librarian."
+    )
+  );
+
+  if (profileError) {
+    form.append(element("p", "profile-error", profileError));
+  }
+
+  const grid = element("div", "profile-form-grid");
+
+  const definitions = [
+    [
+      "profile-full-name",
+      "Full name",
+      "text",
+      studentProfile.fullName || currentUser.displayName || "",
+      100
+    ],
+    [
+      "profile-student-id",
+      "Student ID",
+      "text",
+      studentProfile.studentId || "",
+      40
+    ],
+    [
+      "profile-course",
+      "Course / Program",
+      "text",
+      studentProfile.course || "",
+      100
+    ],
+    [
+      "profile-email-address",
+      "Email address",
+      "email",
+      currentUser.email || "",
+      254
+    ]
+  ];
+
+  definitions.forEach(([id, title, type, value, max]) => {
+    const label = element("label", "profile-field", title);
+    label.htmlFor = id;
+
+    const input = element("input");
+    input.id = id;
+    input.type = type;
+    input.value = value;
+    input.maxLength = max;
+    input.required = id !== "profile-email-address";
+    input.readOnly = id === "profile-email-address";
+
+    if (id === "profile-full-name") {
+      input.autocomplete = "name";
+    }
+
+    if (id === "profile-student-id") {
+      input.placeholder = "Enter your school Student ID";
+    }
+
+    if (id === "profile-course") {
+      input.placeholder = "Example: BS Information Technology";
+    }
+
+    label.append(input);
+    grid.append(label);
+  });
+
+  const save = element(
+    "button",
+    "profile-save-button",
+    "Save profile"
+  );
+
+  save.type = "submit";
+  save.disabled = profileSaving;
+
+  form.append(grid, save);
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    if (
+      !currentUser ||
+      profileSaving ||
+      !form.reportValidity()
+    ) {
+      return;
+    }
+
+    const user = currentUser;
+    const version = sessionVersion;
+
+    const fullName = $("profile-full-name").value.trim();
+    const studentId = $("profile-student-id").value.trim();
+    const course = $("profile-course").value.trim();
+
+    if (!fullName || !studentId || !course) {
+      studentMessage(
+        "Complete your full name, Student ID, and course.",
+        true
+      );
+      return;
+    }
+
+    profileSaving = true;
+    save.disabled = true;
+    save.textContent = "Saving...";
+
+    try {
+      await setDoc(doc(db, "users", user.uid), {
+        fullName,
+        studentId,
+        course,
+        email: user.email,
+        updatedAt: serverTimestamp()
+      });
+
+      if (version === sessionVersion) {
+        studentProfile = {
+          ...studentProfile,
+          fullName,
+          studentId,
+          course,
+          email: user.email
+        };
+
+        profileError = "";
+        fillProfile(user);
+        updateProfileNotice();
+
+        studentMessage("Student profile saved successfully.");
+      }
+    } catch (error) {
+      if (version === sessionVersion) {
+        studentMessage(
+          `Unable to save profile (${error.code || "unknown error"}). Check your connection and profile Firestore Rules.`,
+          true
+        );
+      }
+    } finally {
+      profileSaving = false;
+      save.disabled = false;
+      save.textContent = "Save profile";
+    }
+  });
+
+  container.append(form);
+}
+
+// Real-time data
+function startProfileListener(user, version) {
+  stopProfile = onSnapshot(
+    doc(db, "users", user.uid),
+    (snapshot) => {
+      if (version !== sessionVersion) return;
+
+      profileReady = true;
+      profileError = "";
+      studentProfile = snapshot.exists() ? snapshot.data() : {};
+
+      fillProfile(user);
+      updateProfileNotice();
+
+      const form = $("student-profile-form");
+
+      if (
+        currentView === "settings" &&
+        !form?.contains(document.activeElement)
+      ) {
+        renderStudentProfile();
+      }
+    },
+    (error) => {
+      if (version !== sessionVersion) return;
+
+      profileReady = true;
+      profileError =
+        `Unable to load your profile (${error.code}). Publish the profile Firestore Rules.`;
+
+      updateProfileNotice();
+
+      if (currentView === "settings") {
+        renderStudentProfile();
+      }
+    }
+  );
+}
+
 function refreshDataViews() {
   if (!currentUser) return;
 
@@ -543,13 +775,11 @@ function startDataListeners(user, version) {
     }
   );
 
-  const studentRequests = query(
-    collection(db, "borrowRequests"),
-    where("studentUid", "==", user.uid)
-  );
-
   stopRequests = onSnapshot(
-    studentRequests,
+    query(
+      collection(db, "borrowRequests"),
+      where("studentUid", "==", user.uid)
+    ),
     (snapshot) => {
       if (version !== sessionVersion) return;
 
@@ -627,7 +857,7 @@ function toggleFavourite(book, button) {
   }
 }
 
-// Availability and borrow request
+// Borrowing
 function createBorrowingActions(book) {
   const wrapper = element("div");
   const note = element("p", "availability-text");
@@ -648,26 +878,23 @@ function createBorrowingActions(book) {
   const copies = liveBooks.get(book.id)?.availableCopies;
   const available = Number.isInteger(copies) && copies > 0;
 
-  if (catalogueError) {
-    note.textContent = catalogueError;
-  } else if (!catalogueReady) {
-    note.textContent = "Loading availability...";
-  } else if (!liveBooks.has(book.id)) {
-    note.textContent = "Not listed for borrowing yet.";
-  } else if (!Number.isInteger(copies) || copies < 0) {
-    note.textContent = "Availability needs updating.";
-  } else {
-    note.textContent =
-      `${copies} available ${copies === 1 ? "copy" : "copies"}`;
-  }
+  note.textContent = catalogueError || (
+    !catalogueReady
+      ? "Loading availability..."
+      : !liveBooks.has(book.id)
+        ? "Not listed for borrowing yet."
+        : !Number.isInteger(copies) || copies < 0
+          ? "Availability needs updating."
+          : `${copies} available ${copies === 1 ? "copy" : "copies"}`
+  );
 
-  if (sending.has(book.id)) {
-    borrow.textContent = "Request in progress...";
-  } else if (active) {
-    borrow.textContent = active.status === "pending"
-      ? "Pending approval"
-      : "Already borrowed";
-  }
+  borrow.textContent = sending.has(book.id)
+    ? "Request in progress..."
+    : active
+      ? active.status === "pending"
+        ? "Pending approval"
+        : "Already borrowed"
+      : "Borrow Book";
 
   borrow.disabled =
     Boolean(active) ||
@@ -680,30 +907,22 @@ function createBorrowingActions(book) {
 
   check.addEventListener("click", async () => {
     const version = sessionVersion;
-
     check.disabled = true;
     note.textContent = "Checking availability...";
 
     try {
-      const snapshot = await getDoc(
-        doc(db, "books", book.id)
-      );
-
+      const snapshot = await getDoc(doc(db, "books", book.id));
       if (version !== sessionVersion) return;
 
       const count = snapshot.data()?.availableCopies;
-      let text;
 
-      if (!snapshot.exists()) {
-        text = "Not listed for borrowing yet.";
-      } else if (!Number.isInteger(count) || count < 0) {
-        text = "Availability needs updating.";
-      } else if (count === 0) {
-        text = "Book not available. Select another book.";
-      } else {
-        text =
-          `${count} available copies. Admin approval required.`;
-      }
+      const text = !snapshot.exists()
+        ? "Not listed for borrowing yet."
+        : !Number.isInteger(count) || count < 0
+          ? "Availability needs updating."
+          : count === 0
+            ? "Book not available. Select another book."
+            : `${count} available copies. Admin approval required.`;
 
       note.textContent = text;
       studentMessage(text, false, "info");
@@ -727,6 +946,28 @@ function createBorrowingActions(book) {
       sending.has(book.id) ||
       activeDialog?.open
     ) {
+      return;
+    }
+
+    if (!profileReady) {
+      studentMessage(
+        "Your profile is still loading. Please try again.",
+        false,
+        "info"
+      );
+      return;
+    }
+
+    if (profileError || !profileComplete()) {
+      setView("settings");
+
+      studentMessage(
+        profileError ||
+          "Complete and save your Student ID and course before requesting a book.",
+        false,
+        "info"
+      );
+
       return;
     }
 
@@ -754,17 +995,9 @@ function createBorrowingActions(book) {
       }
 
       borrow.textContent = "Sending request...";
+      studentMessage("Sending your borrow request...", false, "info");
 
-      studentMessage(
-        "Sending your borrow request...",
-        false,
-        "info"
-      );
-
-      const requestRef = doc(
-        collection(db, "borrowRequests")
-      );
-
+      const requestRef = doc(collection(db, "borrowRequests"));
       const lockRef = doc(
         db,
         "borrowLocks",
@@ -837,28 +1070,130 @@ function createBorrowingActions(book) {
   return wrapper;
 }
 
-// Book catalogue
+// Cancel only an owned pending request.
+async function cancelPendingRequest(request) {
+  if (
+    !currentUser ||
+    cancelling.has(request.id) ||
+    activeDialog?.open
+  ) {
+    return;
+  }
+
+  const user = currentUser;
+  const version = sessionVersion;
+
+  cancelling.add(request.id);
+  renderBorrowing();
+
+  try {
+    const confirmed = await confirmAction(
+      "Cancel this request?",
+      "Only this pending request will be cancelled. No book copies will be changed.",
+      "Yes, cancel request",
+      {
+        title: bookTitle(request.bookId),
+        author: `Requested: ${formatDate(request.requestedAt, true)}`
+      },
+      true
+    );
+
+    if (
+      !confirmed ||
+      version !== sessionVersion ||
+      auth.currentUser?.uid !== user.uid
+    ) {
+      return;
+    }
+
+    studentMessage("Cancelling your request...", false, "info");
+
+    await runTransaction(db, async (transaction) => {
+      const requestRef = doc(db, "borrowRequests", request.id);
+      const snapshot = await transaction.get(requestRef);
+
+      if (!snapshot.exists()) {
+        throw new Error("This request no longer exists.");
+      }
+
+      const data = snapshot.data();
+
+      if (data.studentUid !== user.uid) {
+        throw new Error("You can only cancel your own request.");
+      }
+
+      if (data.status !== "pending") {
+        throw new Error(
+          "This request is no longer pending. Approved books must be returned through the librarian."
+        );
+      }
+
+      const lockRef = doc(
+        db,
+        "borrowLocks",
+        `${user.uid}_${data.bookId}`
+      );
+
+      const lock = await transaction.get(lockRef);
+
+      if (
+        !lock.exists() ||
+        lock.data().requestId !== request.id
+      ) {
+        throw new Error(
+          "The active request record needs checking. Contact the librarian."
+        );
+      }
+
+      transaction.update(requestRef, {
+        status: "cancelled",
+        cancelledAt: serverTimestamp()
+      });
+
+      transaction.delete(lockRef);
+    });
+
+    if (version === sessionVersion) {
+      studentMessage(
+        "Request cancelled successfully. You can find it in Borrowing History."
+      );
+    }
+  } catch (error) {
+    if (version === sessionVersion) {
+      studentMessage(
+        error.code
+          ? `Unable to cancel request (${error.code}). Check your connection and cancellation Firestore Rules.`
+          : error.message,
+        true
+      );
+    }
+  } finally {
+    if (version === sessionVersion) {
+      cancelling.delete(request.id);
+      refreshDataViews();
+    }
+  }
+}
+
+// Catalogue
 function renderBooks() {
   const grid = $("book-grid");
   grid.replaceChildren();
 
   const text = $("search").value.trim().toLowerCase();
 
-  const rows = catalogueBooks().filter((book) => {
-    const matchesSearch =
-      `${book.title} ${book.author}`.toLowerCase().includes(text);
-
-    const matchesCategory =
+  const rows = catalogueBooks().filter((book) =>
+    `${book.title} ${book.author}`.toLowerCase().includes(text) &&
+    (
       currentView !== "category" ||
       selectedCategory === "All" ||
-      book.category === selectedCategory;
-
-    const matchesFavourite =
+      book.category === selectedCategory
+    ) &&
+    (
       currentView !== "favourite" ||
-      favourites.has(book.id);
-
-    return matchesSearch && matchesCategory && matchesFavourite;
-  });
+      favourites.has(book.id)
+    )
+  );
 
   $("result-count").textContent =
     `${rows.length} book${rows.length === 1 ? "" : "s"}`;
@@ -886,7 +1221,6 @@ function renderBooks() {
     favourite.append(createIcon("heart"));
 
     updateFavouriteButton(favourite, book);
-
     favourite.addEventListener("click", () => {
       toggleFavourite(book, favourite);
     });
@@ -928,7 +1262,6 @@ function renderCategories() {
 
   categories.forEach((category) => {
     const selected = category === selectedCategory;
-
     const button = element(
       "button",
       `chip${selected ? " active" : ""}`,
@@ -948,7 +1281,7 @@ function renderCategories() {
   });
 }
 
-// Borrowed books and history
+// Current loans and history
 function renderBorrowing() {
   const container = $("details");
   container.replaceChildren();
@@ -964,7 +1297,7 @@ function renderBorrowing() {
 
   const rows = requests.filter((request) =>
     currentView === "history"
-      ? ["returned", "rejected"].includes(request.status)
+      ? ["returned", "rejected", "cancelled"].includes(request.status)
       : ["pending", "approved"].includes(request.status)
   );
 
@@ -982,26 +1315,14 @@ function renderBorrowing() {
   const list = element("div", "loan-list");
 
   rows.forEach((request) => {
-    const card = element("article", "loan-card");
+    const overdue = isOverdue(request);
+
+    const card = element(
+      "article",
+      `loan-card${overdue ? " overdue-card" : ""}`
+    );
+
     const info = element("div");
-
-    let detail;
-
-    if (request.status === "pending") {
-      detail =
-        "Waiting for admin approval. No copy has been issued.";
-    } else if (request.status === "approved") {
-      detail = request.dueAt
-        ? `Due date: ${formatDate(request.dueAt)}`
-        : "Approved. Contact the librarian for your due date.";
-    } else if (request.status === "returned") {
-      detail = request.returnedAt
-        ? `Returned: ${formatDate(request.returnedAt, true)}`
-        : "Book returned.";
-    } else {
-      detail =
-        request.reason || "Request declined by the admin.";
-    }
 
     info.append(
       element("h3", "", bookTitle(request.bookId)),
@@ -1009,33 +1330,116 @@ function renderBorrowing() {
         "p",
         "request-timestamp",
         `Requested: ${formatDate(request.requestedAt, true)}`
-      ),
-      element("p", "", detail),
-      element("p", "", `Reference: ${request.id}`)
+      )
     );
 
-    const badge = element(
+    if (request.status === "pending") {
+      info.append(element(
+        "p",
+        "",
+        "Waiting for admin approval. No copy has been issued."
+      ));
+    } else if (request.status === "approved") {
+      info.append(element(
+        "p",
+        "request-timestamp",
+        request.dueAt
+          ? `Due: ${formatDate(request.dueAt, true)}`
+          : "Contact the librarian for your due date."
+      ));
+
+      if (overdue) {
+        info.append(element(
+          "p",
+          "overdue-reminder",
+          "Overdue — please return this book to the library."
+        ));
+      }
+    } else if (request.status === "returned") {
+      info.append(element(
+        "p",
+        "request-timestamp",
+        request.returnedAt
+          ? `Returned: ${formatDate(request.returnedAt, true)}`
+          : "Book returned."
+      ));
+    } else if (request.status === "cancelled") {
+      info.append(element(
+        "p",
+        "request-timestamp",
+        request.cancelledAt
+          ? `Cancelled: ${formatDate(request.cancelledAt, true)}`
+          : "Cancelled by student."
+      ));
+    } else {
+      info.append(element(
+        "p",
+        "",
+        request.reason || "Request declined by the admin."
+      ));
+    }
+
+    info.append(element("p", "", `Reference: ${request.id}`));
+
+    const actions = element("div", "loan-card-actions");
+
+    actions.append(element(
       "span",
-      `loan-status ${request.status}`,
-      request.status === "approved" ? "Borrowed" : request.status
-    );
+      `loan-status ${overdue ? "overdue" : request.status}`,
+      overdue
+        ? "Overdue"
+        : request.status === "approved"
+          ? "Borrowed"
+          : request.status
+    ));
 
-    card.append(info, badge);
+    if (request.status === "pending") {
+      const cancel = element(
+        "button",
+        "cancel-request-button",
+        cancelling.has(request.id) ? "Please wait..." : "Cancel request"
+      );
+
+      cancel.type = "button";
+      cancel.disabled = cancelling.has(request.id);
+
+      cancel.addEventListener("click", () => {
+        cancelPendingRequest(request);
+      });
+
+      actions.append(cancel);
+    }
+
+    card.append(info, actions);
     list.append(card);
   });
 
   container.append(list);
 }
 
-// Notification dropdown
 function renderNotifications() {
   const container = $("notification-list");
   container.replaceChildren();
 
-  const updates = requests.filter(
-    (request) =>
-      ["approved", "rejected", "returned"].includes(request.status)
-  ).slice(0, 5);
+  function lastUpdate(request) {
+    return request.cancelledAt?.toMillis?.() ||
+      request.returnedAt?.toMillis?.() ||
+      request.reviewedAt?.toMillis?.() ||
+      request.approvedAt?.toMillis?.() ||
+      request.requestedAt?.toMillis?.() ||
+      0;
+  }
+
+  const updates = requests
+    .filter((request) =>
+      ["approved", "rejected", "returned", "cancelled"]
+        .includes(request.status)
+    )
+    .sort((a, b) =>
+      Number(isOverdue(b)) - Number(isOverdue(a)) ||
+      lastUpdate(b) - lastUpdate(a)
+    )
+    .slice(0, 5);
 
   if (requestsError || !requestsReady || !updates.length) {
     container.append(element(
@@ -1051,14 +1455,22 @@ function renderNotifications() {
   }
 
   updates.forEach((request) => {
-    let text =
-      `${bookTitle(request.bookId)} — ${request.status}`;
+    const overdue = isOverdue(request);
+
+    const item = element(
+      "div",
+      `notification-item${overdue ? " overdue-notification" : ""}`
+    );
+
+    let text = `${bookTitle(request.bookId)} — ${
+      overdue
+        ? "Overdue. Please return this book."
+        : request.status
+    }`;
 
     if (request.status === "approved" && request.dueAt) {
-      text += `. Due ${formatDate(request.dueAt)}`;
+      text += ` Due ${formatDate(request.dueAt, true)}.`;
     }
-
-    const item = element("div", "notification-item");
 
     item.append(
       element("p", "", text),
@@ -1073,7 +1485,7 @@ function renderNotifications() {
   });
 }
 
-// Page views
+// Views
 function renderDetails(title, lines) {
   const box = element("div", "detail-box");
   box.append(element("h3", "", title));
@@ -1089,7 +1501,6 @@ function setView(view) {
   if (!views[view] || !currentUser) return;
 
   currentView = view;
-
   closeDropdowns();
   closeSidebar();
   studentMessage("");
@@ -1103,7 +1514,6 @@ function setView(view) {
   document.querySelectorAll(".nav-button[data-view]").forEach(
     (button) => {
       const active = button.dataset.view === view;
-
       button.classList.toggle("active", active);
 
       if (active) {
@@ -1134,12 +1544,12 @@ function setView(view) {
   } else if (["library", "history"].includes(view)) {
     renderBorrowing();
   } else if (view === "settings") {
-    renderDetails("Student profile", profileLines());
+    renderStudentProfile();
   } else if (view === "support") {
     renderDetails("Contact your librarian", [
       "Visit your school library desk for account assistance.",
-      "Borrow requests require admin approval.",
-      "Available copies are checked again before a book is issued.",
+      "Pending requests can be cancelled from My Borrowed Books.",
+      "Approved books must be returned through the librarian.",
       "For a forgotten password, use Forgot password on the login page."
     ]);
   }
@@ -1181,20 +1591,16 @@ async function logoutStudent() {
   }
 }
 
-// Navigation — one handler to avoid duplicate actions
+// Navigation
 document.addEventListener("click", (event) => {
-  const logout = event.target.closest("[data-logout]");
-
-  if (logout) {
+  if (event.target.closest("[data-logout]")) {
     logoutStudent();
     return;
   }
 
-  const profile = event.target.closest(
+  if (event.target.closest(
     '#profile button[data-view="settings"], [data-student-profile], [data-profile-details]'
-  );
-
-  if (profile) {
+  )) {
     showProfile();
     return;
   }
@@ -1213,8 +1619,8 @@ document.addEventListener("click", (event) => {
     if (!panel) return;
 
     const open = panel.hidden;
-
     closeDropdowns();
+
     panel.hidden = !open;
     trigger.setAttribute("aria-expanded", String(open));
     return;
@@ -1265,13 +1671,21 @@ onAuthStateChanged(auth, async (user) => {
 
   stopBooks?.();
   stopRequests?.();
+  stopProfile?.();
   activeDialog?.close();
   studentMessage("");
 
   currentUser = null;
+  studentProfile = {};
+  profileReady = false;
+  profileError = "";
+
   liveBooks = new Map();
   requests = [];
+
   sending.clear();
+  cancelling.clear();
+  overdueSignature = "";
 
   catalogueReady = false;
   requestsReady = false;
@@ -1288,9 +1702,7 @@ onAuthStateChanged(auth, async (user) => {
   }
 
   try {
-    const snapshot = await getDoc(
-      doc(db, "roles", user.uid)
-    );
+    const snapshot = await getDoc(doc(db, "roles", user.uid));
 
     if (
       version !== sessionVersion ||
@@ -1335,6 +1747,9 @@ onAuthStateChanged(auth, async (user) => {
     $("app").hidden = false;
 
     setView("discover");
+    updateProfileNotice();
+
+    startProfileListener(user, version);
     startDataListeners(user, version);
   } catch (error) {
     if (version !== sessionVersion) return;
@@ -1347,8 +1762,7 @@ onAuthStateChanged(auth, async (user) => {
   }
 });
 
-// Live Philippine clock
-// Updates only the display, not the Firestore data.
+// Live clock and overdue refresh
 const clockDateFormatter = new Intl.DateTimeFormat("en-PH", {
   month: "long",
   day: "numeric",
@@ -1378,6 +1792,25 @@ function updateDashboardClock() {
   target.dateTime = now.toISOString();
   date.textContent = clockDateFormatter.format(now);
   time.textContent = `${clockTimeFormatter.format(now)} PHT`;
+
+  if (currentUser && requestsReady) {
+    const signature = requests
+      .filter((request) => request.status === "approved")
+      .map((request) =>
+        `${request.id}:${isOverdue(request, now.getTime())}`
+      )
+      .join("|");
+
+    if (signature !== overdueSignature) {
+      overdueSignature = signature;
+
+      if (currentView === "library") {
+        renderBorrowing();
+      }
+
+      renderNotifications();
+    }
+  }
 }
 
 function startDashboardClock() {

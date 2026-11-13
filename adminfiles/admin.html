@@ -6,8 +6,8 @@
 
   <title>BookBase | Admin</title>
 
-  <link rel="stylesheet" href="./admin.css">
-  <script type="module" src="./admin.js?v=clock-1"></script>
+  <link rel="stylesheet" href="./admin.css?v=borrower-2">
+  <script type="module" src="./admin.js?v=borrower-2"></script>
 </head>
 
 <body>
@@ -15,10 +15,11 @@
     <span></span>
   </div>
 
-  <svg class="icon-definitions"
-       xmlns="http://www.w3.org/2000/svg"
-       aria-hidden="true">
-
+  <svg
+    class="icon-definitions"
+    xmlns="http://www.w3.org/2000/svg"
+    aria-hidden="true"
+  >
     <symbol id="i-book" viewBox="0 0 24 24">
       <path d="M12 5C8 2 4 3 2 4v15c4-1 7 0 10 2 3-2 6-3 10-2V4c-3-1-6-2-10 1ZM12 5v16"/>
     </symbol>
@@ -60,7 +61,12 @@
   <div id="app" hidden>
     <div id="shade" class="shade" hidden></div>
 
-    <aside class="sidebar" id="sidebar" aria-label="Admin navigation">
+    <!-- Sidebar -->
+    <aside
+      class="sidebar"
+      id="sidebar"
+      aria-label="Admin navigation"
+    >
       <div class="brand">
         <span class="brand-logo">
           <svg class="icon" aria-hidden="true">
@@ -73,30 +79,45 @@
       <p class="nav-label">MAIN</p>
 
       <nav aria-label="Main navigation">
-        <button class="nav-button active"
-                data-view="pending"
-                aria-current="page">
+        <button
+          type="button"
+          class="nav-button active"
+          data-view="pending"
+          aria-current="page"
+        >
           <svg class="icon" aria-hidden="true">
             <use href="#i-requests"/>
           </svg>
           Borrow Requests
         </button>
 
-        <button class="nav-button" data-view="approved">
+        <button
+          type="button"
+          class="nav-button"
+          data-view="approved"
+        >
           <svg class="icon" aria-hidden="true">
             <use href="#i-book"/>
           </svg>
           Borrowed Books
         </button>
 
-        <button class="nav-button" data-view="history">
+        <button
+          type="button"
+          class="nav-button"
+          data-view="history"
+        >
           <svg class="icon" aria-hidden="true">
             <use href="#i-history"/>
           </svg>
           Borrowing History
         </button>
 
-        <button class="nav-button" data-view="books">
+        <button
+          type="button"
+          class="nav-button"
+          data-view="books"
+        >
           <svg class="icon" aria-hidden="true">
             <use href="#i-grid"/>
           </svg>
@@ -107,9 +128,12 @@
       <div class="sidebar-bottom">
         <div class="divider"></div>
 
-        <button id="logout"
-                class="nav-button logout-button"
-                data-logout>
+        <button
+          type="button"
+          id="logout"
+          class="nav-button logout-button"
+          data-logout
+        >
           <svg class="icon" aria-hidden="true">
             <use href="#i-logout"/>
           </svg>
@@ -119,68 +143,102 @@
     </aside>
 
     <div class="workspace">
+      <!-- Top navigation -->
       <header class="topbar">
-        <button class="icon-button mobile-menu"
-                id="menu-button"
-                aria-label="Open navigation"
-                aria-controls="sidebar"
-                aria-expanded="false">
+        <button
+          type="button"
+          class="icon-button mobile-menu"
+          id="menu-button"
+          aria-label="Open navigation"
+          aria-controls="sidebar"
+          aria-expanded="false"
+        >
           <svg class="icon" aria-hidden="true">
             <use href="#i-menu"/>
           </svg>
         </button>
 
         <div class="topbar-context">
-          <span class="topbar-label">Library Management System</span>
+          <span class="topbar-label">
+            Library Management System
+          </span>
 
-          <time id="dashboard-clock"
-                class="dashboard-clock"
-                aria-label="Current Philippine date and time">
+          <time
+            id="dashboard-clock"
+            class="dashboard-clock"
+            aria-label="Current Philippine date and time"
+          >
             <span id="clock-date" class="clock-date"></span>
             <span id="clock-time" class="clock-time"></span>
           </time>
         </div>
 
         <div class="top-actions">
+          <!-- Notifications -->
           <div class="action-wrap">
-            <button class="icon-button"
-                    data-dropdown="notifications"
-                    aria-label="Notifications"
-                    aria-controls="notifications"
-                    aria-expanded="false">
+            <button
+              type="button"
+              class="icon-button"
+              data-dropdown="notifications"
+              aria-label="Notifications"
+              aria-controls="notifications"
+              aria-expanded="false"
+            >
               <svg class="icon" aria-hidden="true">
                 <use href="#i-bell"/>
               </svg>
             </button>
 
-            <div class="dropdown" id="notifications" hidden>
+            <div
+              class="dropdown"
+              id="notifications"
+              hidden
+            >
               <h3>Borrowing updates</h3>
-              <p id="admin-notification-text">Loading requests...</p>
+
+              <p id="admin-notification-text">
+                Loading requests...
+              </p>
+
+              <div id="admin-notification-list"></div>
             </div>
           </div>
 
+          <!-- Admin profile -->
           <div class="action-wrap">
-            <button class="profile-button"
-                    data-dropdown="profile"
-                    aria-label="Open profile"
-                    aria-controls="profile"
-                    aria-expanded="false">
-              <span class="avatar" id="avatar" aria-hidden="true">A</span>
+            <button
+              type="button"
+              class="profile-button"
+              data-dropdown="profile"
+              aria-label="Open profile"
+              aria-controls="profile"
+              aria-expanded="false"
+            >
+              <span
+                class="avatar"
+                id="avatar"
+                aria-hidden="true"
+              >A</span>
 
               <span class="user-summary">
                 <strong id="admin-name">Admin</strong>
                 <small>Admin / Librarian</small>
               </span>
 
-              <svg class="icon profile-arrow" aria-hidden="true">
+              <svg
+                class="icon profile-arrow"
+                aria-hidden="true"
+              >
                 <use href="#i-chevron"/>
               </svg>
             </button>
 
             <div class="dropdown" id="profile" hidden>
-              <span class="avatar profile-large"
-                    id="profile-avatar"
-                    aria-hidden="true">A</span>
+              <span
+                class="avatar profile-large"
+                id="profile-avatar"
+                aria-hidden="true"
+              >A</span>
 
               <h3 id="profile-name">Admin</h3>
               <p id="profile-email"></p>
@@ -198,14 +256,17 @@
         </div>
       </header>
 
+      <!-- Dashboard content -->
       <main>
         <p class="eyebrow">ADMIN DASHBOARD</p>
+
         <h1 id="page-title">Borrow requests</h1>
 
         <p id="page-description">
           Review requests before issuing a book.
         </p>
 
+        <!-- Dashboard counts -->
         <div class="stats">
           <article>
             <span>Pending requests</span>
@@ -221,65 +282,98 @@
             <span>Available copies</span>
             <strong id="copies-count">—</strong>
           </article>
+
+          <article class="overdue-stat">
+            <span>Overdue books</span>
+            <strong id="overdue-count">—</strong>
+          </article>
         </div>
 
-        <p id="status" role="status" aria-live="polite"></p>
+        <p
+          id="status"
+          role="status"
+          aria-live="polite"
+        ></p>
 
+        <!-- Requests, borrowed books, and history -->
         <section id="requests-panel" class="panel">
           <div id="request-list" class="record-list"></div>
         </section>
 
+        <!-- Manage Books -->
         <section id="books-panel" hidden>
           <form id="book-form" class="panel">
             <h2>Add a book</h2>
 
             <p class="hint">
-              Book ID must be unique. Use letters, numbers, or hyphens.
+              Book ID must be unique.
+              Use letters, numbers, or hyphens.
             </p>
 
             <div class="form-grid">
               <label>
                 Book ID
-                <input id="book-id"
-                       pattern="[a-zA-Z0-9-]+"
-                       placeholder="example: science-101"
-                       maxlength="100"
-                       required>
+                <input
+                  id="book-id"
+                  pattern="[a-zA-Z0-9-]+"
+                  placeholder="example: science-101"
+                  maxlength="100"
+                  required
+                >
               </label>
 
               <label>
                 Title
-                <input id="book-title" maxlength="200" required>
+                <input
+                  id="book-title"
+                  maxlength="200"
+                  required
+                >
               </label>
 
               <label>
                 Author
-                <input id="book-author" maxlength="150" required>
+                <input
+                  id="book-author"
+                  maxlength="150"
+                  required
+                >
               </label>
 
               <label>
                 Category
-                <input id="book-category" maxlength="100" required>
+                <input
+                  id="book-category"
+                  maxlength="100"
+                  required
+                >
               </label>
 
               <label>
                 Available copies
-                <input id="book-copies"
-                       type="number"
-                       min="0"
-                       max="100000"
-                       step="1"
-                       required>
+                <input
+                  id="book-copies"
+                  type="number"
+                  min="0"
+                  max="100000"
+                  step="1"
+                  required
+                >
               </label>
             </div>
 
-            <button type="submit" id="save-book" class="primary">
+            <button
+              type="submit"
+              id="save-book"
+              class="primary"
+            >
               Add Book
             </button>
           </form>
 
           <section class="panel catalogue-panel">
             <h2>Library catalogue</h2>
+
             <div id="book-list" class="record-list"></div>
           </section>
         </section>
