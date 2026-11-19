@@ -4,6 +4,7 @@ import { initializeApp } from
 import {
   getAuth,
   onAuthStateChanged,
+  updateProfile,
   signOut
 } from
   "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
@@ -20,7 +21,11 @@ import {
 } from
   "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
 
-// Firebase
+
+// =====================================================
+// FIREBASE
+// =====================================================
+
 const app = initializeApp({
   apiKey: "AIzaSyAI-ZTiaClMvISqvG5KIJW8rA_YQ0rukbw",
   authDomain: "library-db9da.firebaseapp.com",
@@ -32,10 +37,706 @@ const app = initializeApp({
 
 const auth = getAuth(app);
 const db = getFirestore(app);
-const $ = (id) => document.getElementById(id);
+const $ = id => document.getElementById(id);
 
+
+// =====================================================
+// OOP RECORDS
+// =====================================================
+
+export class AdminRecord {
+  #id;
+
+  constructor(id) {
+    if (new.target === AdminRecord) {
+      throw new Error("AdminRecord is abstract.");
+    }
+
+    if (typeof id !== "string" || !id || id.includes("/")) {
+      throw new Error("Invalid record ID.");
+    }
+
+    this.#id = id;
+  }
+
+  getId() { return this.#id; }
+  get id() { return this.#id; }
+
+  getSummary() {
+    throw new Error("Implement getSummary() in the child class.");
+  }
+}
+
+export class AdminProfile extends AdminRecord {
+  #data;
+
+  constructor(user) {
+    super(user.uid);
+
+    this.#data = {
+      name: user.displayName || "",
+      email: user.email || "",
+      verified: user.emailVerified === true,
+      photoURL: user.photoURL || ""
+    };
+  }
+
+  get name() { return this.#data.name.trim() || this.email || "Admin"; }
+  get email() { return this.#data.email; }
+  get verified() { return this.#data.verified; }
+  get photoURL() { return this.#data.photoURL; }
+
+  getSummary() {
+    return { title: this.name, subtitle: this.email };
+  }
+}
+
+export class AdminBook extends AdminRecord {
+  #data;
+  #copies;
+  #registered;
+
+  constructor(id, data, registered = true) {
+    super(id);
+    this.#data = { ...data };
+    this.#copies = data.availableCopies;
+    this.#registered = registered;
+  }
+
+  get title() { return this.#data.title || this.id; }
+  get author() { return this.#data.author || "Unknown author"; }
+  get category() { return this.#data.category || "General"; }
+  get color() { return this.#data.color || "#738baa"; }
+  get ink() { return this.#data.ink || "#ffffff"; }
+  get availableCopies() { return this.#copies; }
+  get registered() { return this.#registered; }
+
+  getSummary() {
+    return { title: this.title, subtitle: this.author };
+  }
+
+  isInventoryValid() {
+    return Number.isSafeInteger(this.#copies) && this.#copies >= 0;
+  }
+
+  issueCopy() {
+    if (!this.isInventoryValid()) {
+      throw new Error("Book inventory needs correcting.");
+    }
+
+    if (this.#copies <= 0) {
+      throw new Error("No copies available. The request was not approved.");
+    }
+
+    this.#copies -= 1;
+  }
+
+  addCopies(count) {
+    if (
+      !Number.isSafeInteger(count) ||
+      count < 0 ||
+      count > 100000 ||
+      !this.isInventoryValid() ||
+      !Number.isSafeInteger(this.#copies + count)
+    ) {
+      throw new Error("Enter a valid number of additional copies (0–100000).");
+    }
+
+    this.#copies += count;
+  }
+
+  returnCopy() {
+    if (
+      !this.isInventoryValid() ||
+      this.#copies >= Number.MAX_SAFE_INTEGER
+    ) {
+      throw new Error("Book inventory needs correcting.");
+    }
+
+    this.#copies += 1;
+  }
+
+  toDocument() {
+    return {
+      title: this.title,
+      author: this.author,
+      category: this.category,
+      availableCopies: this.#copies,
+      color: this.color,
+      ink: this.ink
+    };
+  }
+}
+
+
+// =====================================================
+// RANDOM COVER PALETTE
+// =====================================================
+
+export class BookCoverPalette {
+  static #colors = [
+    { color: "#1E3A5F", ink: "#FFFFFF" },
+    { color: "#3B5B46", ink: "#FFFFFF" },
+    { color: "#6B3E26", ink: "#FFFFFF" },
+    { color: "#5B3C6F", ink: "#FFFFFF" },
+    { color: "#2D5C63", ink: "#FFFFFF" },
+    { color: "#8A3C3C", ink: "#FFFFFF" },
+    { color: "#F7D794", ink: "#1F2937" },
+    { color: "#C8D5B9", ink: "#1F2937" },
+    { color: "#C9D6EA", ink: "#1F2937" },
+    { color: "#E7D7C1", ink: "#1F2937" }
+  ];
+
+  static pick(usedColors = [], lastColor = "") {
+    const used = new Set(
+      usedColors.map(color => String(color).toLowerCase())
+    );
+
+    let choices = this.#colors.filter(
+      item =>
+        !used.has(item.color.toLowerCase()) &&
+        item.color !== lastColor
+    );
+
+    if (!choices.length) {
+      choices = this.#colors.filter(item => item.color !== lastColor);
+    }
+
+    return {
+      ...choices[Math.floor(Math.random() * choices.length)]
+    };
+  }
+}
+
+
+// =====================================================
+// PROFILE SERVICE
+// =====================================================
+
+export class AdminProfileService {
+  #auth;
+
+  constructor(auth) {
+    this.#auth = auth;
+  }
+
+  async updateName(profile, name) {
+    const user = this.#auth.currentUser;
+
+    if (
+      !(profile instanceof AdminProfile) ||
+      !user?.emailVerified ||
+      user.uid !== profile.id
+    ) {
+      throw new Error("Your session changed. Sign in again.");
+    }
+
+    if (
+      typeof name !== "string" ||
+      !name.trim() ||
+      name.trim().length > 100
+    ) {
+      throw new Error("Enter a full name up to 100 characters.");
+    }
+
+    await updateProfile(user, {
+      displayName: name.trim()
+    });
+
+    if (this.#auth.currentUser?.uid !== profile.id) {
+      throw new Error("Your session changed. Sign in again.");
+    }
+
+    return new AdminProfile({
+      uid: user.uid,
+      displayName: name.trim(),
+      email: user.email,
+      emailVerified: user.emailVerified,
+      photoURL: user.photoURL
+    });
+  }
+}
+
+
+// =====================================================
+// BORROWING SERVICE
+// =====================================================
+
+export class AdminBorrowingService {
+  #db;
+  #auth;
+
+  constructor(db, auth) {
+    this.#db = db;
+    this.#auth = auth;
+  }
+
+  #assertActor(profile) {
+    if (
+      !(profile instanceof AdminProfile) ||
+      !this.#auth.currentUser?.emailVerified ||
+      this.#auth.currentUser.uid !== profile.id
+    ) {
+      throw new Error("Your session changed. Sign in again.");
+    }
+
+    // Firestore Rules enforce the saved admin role.
+  }
+
+  approve(profile, requestId, dueAt) {
+    return this.#process(profile, requestId, "approve", "", dueAt);
+  }
+
+  reject(profile, requestId, reason) {
+    if (
+      typeof reason !== "string" ||
+      !reason.trim() ||
+      reason.trim().length > 500
+    ) {
+      throw new Error("Enter a rejection reason up to 500 characters.");
+    }
+
+    return this.#process(profile, requestId, "reject", reason.trim());
+  }
+
+  returnBook(profile, requestId) {
+    return this.#process(profile, requestId, "return");
+  }
+
+  #validateDueDate(dueAt) {
+    const millis = dueAt?.toMillis?.();
+
+    if (!Number.isFinite(millis) || millis <= Date.now()) {
+      throw new Error(
+        "Select a due date and time later than the current time."
+      );
+    }
+  }
+
+  async #process(
+    profile,
+    requestId,
+    action,
+    reason = "",
+    dueAt = null
+  ) {
+    this.#assertActor(profile);
+
+    if (action === "approve") {
+      this.#validateDueDate(dueAt);
+    }
+
+    await runTransaction(this.#db, async transaction => {
+      this.#assertActor(profile);
+
+      const requestRef = doc(this.#db, "borrowRequests", requestId);
+      const snapshot = await transaction.get(requestRef);
+
+      if (!snapshot.exists()) {
+        throw new Error("This request no longer exists.");
+      }
+
+      const data = snapshot.data();
+
+      const expectedStatus =
+        action === "return" ? "approved" : "pending";
+
+      if (data.status !== expectedStatus) {
+        throw new Error("This request has already been processed.");
+      }
+
+      const bookRef = doc(this.#db, "books", data.bookId);
+
+      const lockRef = doc(
+        this.#db,
+        "borrowLocks",
+        `${data.studentUid}_${data.bookId}`
+      );
+
+      const bookSnapshot = await transaction.get(bookRef);
+      const lock = await transaction.get(lockRef);
+
+      if (
+        !lock.exists() ||
+        lock.data().requestId !== requestId ||
+        lock.data().studentUid !== data.studentUid ||
+        lock.data().bookId !== data.bookId
+      ) {
+        throw new Error(
+          "The active borrowing record is inconsistent. Review it first."
+        );
+      }
+
+      if (action === "reject") {
+        transaction.update(requestRef, {
+          status: "rejected",
+          reason,
+          reviewedAt: serverTimestamp(),
+          reviewedBy: profile.id
+        });
+
+        transaction.delete(lockRef);
+        return;
+      }
+
+      if (!bookSnapshot.exists()) {
+        throw new Error("Book inventory needs correcting.");
+      }
+
+      const book = new AdminBook(
+        data.bookId,
+        bookSnapshot.data()
+      );
+
+      if (action === "approve") {
+        this.#validateDueDate(dueAt);
+        book.issueCopy();
+
+        transaction.update(bookRef, {
+          availableCopies: book.availableCopies
+        });
+
+        transaction.update(requestRef, {
+          status: "approved",
+          approvedAt: serverTimestamp(),
+          approvedBy: profile.id,
+          dueAt
+        });
+      } else {
+        book.returnCopy();
+
+        transaction.update(bookRef, {
+          availableCopies: book.availableCopies
+        });
+
+        transaction.update(requestRef, {
+          status: "returned",
+          returnedAt: serverTimestamp(),
+          returnedBy: profile.id
+        });
+
+        transaction.delete(lockRef);
+      }
+    });
+  }
+}
+
+
+// =====================================================
+// CATALOGUE SERVICE
+// =====================================================
+
+export class AdminCatalogueService {
+  #db;
+  #auth;
+  #lastColor = "";
+
+  constructor(db, auth) {
+    this.#db = db;
+    this.#auth = auth;
+  }
+
+  getBooks(samples, inventory) {
+    const merged = new Map(
+      samples.map(book => [book.id, { ...book }])
+    );
+
+    inventory.forEach((data, id) => {
+      const previous = merged.get(id);
+
+      merged.set(id, {
+        ...previous,
+        ...data,
+        id,
+        title: data.title || previous?.title || id,
+        author: data.author || previous?.author || "Unknown author",
+        category: data.category || previous?.category || "General"
+      });
+    });
+
+    return [...merged]
+      .map(
+        ([id, data]) =>
+          new AdminBook(id, data, inventory.has(id))
+      )
+      .sort((a, b) => a.title.localeCompare(b.title));
+  }
+
+  async addBook(profile, values, usedColors = []) {
+    const assertSession = () => {
+      if (
+        !(profile instanceof AdminProfile) ||
+        !this.#auth.currentUser?.emailVerified ||
+        this.#auth.currentUser.uid !== profile.id
+      ) {
+        throw new Error("Your session changed. Sign in again.");
+      }
+    };
+
+    assertSession();
+
+    const {
+      id,
+      title,
+      author,
+      category,
+      availableCopies
+    } = values;
+
+    if (
+      typeof id !== "string" ||
+      !/^[a-zA-Z0-9-]+$/.test(id) ||
+      id.length > 100 ||
+      ![title, author, category].every(
+        value => typeof value === "string" && value.trim()
+      ) ||
+      title.length > 200 ||
+      author.length > 150 ||
+      category.length > 100 ||
+      !Number.isSafeInteger(availableCopies) ||
+      availableCopies < 0 ||
+      availableCopies > 100000
+    ) {
+      throw new Error("Complete all fields with valid values.");
+    }
+
+    const cover = BookCoverPalette.pick(
+      usedColors,
+      this.#lastColor
+    );
+
+    const book = new AdminBook(id, {
+      title: title.trim(),
+      author: author.trim(),
+      category: category.trim(),
+      availableCopies,
+      ...cover
+    });
+
+    await runTransaction(this.#db, async transaction => {
+      assertSession();
+
+      const ref = doc(this.#db, "books", id);
+      const existing = await transaction.get(ref);
+
+      if (existing.exists()) {
+        throw new Error(
+          "Book ID already exists. Use a different ID."
+        );
+      }
+
+      transaction.set(ref, {
+        ...book.toDocument(),
+        createdAt: serverTimestamp()
+      });
+    });
+
+    this.#lastColor = cover.color;
+    return book;
+  }
+
+  async updateBook(profile, bookId, values) {
+    const assertSession = () => {
+      if (
+        !(profile instanceof AdminProfile) ||
+        !this.#auth.currentUser?.emailVerified ||
+        this.#auth.currentUser.uid !== profile.id
+      ) {
+        throw new Error("Your session changed. Sign in again.");
+      }
+    };
+
+    assertSession();
+
+    const {
+      title,
+      author,
+      category,
+      addCopies = 0
+    } = values;
+
+    if (
+      ![title, author, category].every(
+        value => typeof value === "string" && value.trim()
+      ) ||
+      title.length > 200 ||
+      author.length > 150 ||
+      category.length > 100 ||
+      !Number.isSafeInteger(addCopies) ||
+      addCopies < 0 ||
+      addCopies > 100000
+    ) {
+      throw new Error(
+        "Complete all book fields and enter valid additional copies."
+      );
+    }
+
+    await runTransaction(this.#db, async transaction => {
+      assertSession();
+
+      const ref = doc(this.#db, "books", bookId);
+      const snapshot = await transaction.get(ref);
+
+      if (!snapshot.exists()) {
+        throw new Error(
+          "This book no longer exists. Refresh the catalogue."
+        );
+      }
+
+      const book = new AdminBook(
+        bookId,
+        snapshot.data()
+      );
+
+      // Use the latest stock inside the transaction.
+      book.addCopies(addCopies);
+
+      const changes = {
+        title: title.trim(),
+        author: author.trim(),
+        category: category.trim(),
+        updatedAt: serverTimestamp(),
+        updatedBy: profile.id
+      };
+
+      if (addCopies > 0) {
+        changes.availableCopies = book.availableCopies;
+      }
+
+      // Keep Book ID, cover colors, and existing loans unchanged.
+      transaction.update(ref, changes);
+    });
+  }
+}
+
+
+// =====================================================
+// SEARCH AND SORT SERVICE
+// =====================================================
+
+export class AdminFilterService {
+  #collator = new Intl.Collator("en", {
+    sensitivity: "base",
+    numeric: true
+  });
+
+  static normalize(value) {
+    return String(value ?? "")
+      .normalize("NFD")
+      .replace(/\p{M}/gu, "")
+      .toLowerCase()
+      .trim();
+  }
+
+  static matches(query, fields) {
+    const text = this.normalize(fields.join(" "));
+
+    return this.normalize(query)
+      .split(/\s+/)
+      .filter(Boolean)
+      .every(term => text.includes(term));
+  }
+
+  books(records, query, category, order) {
+    return records
+      .filter(book =>
+        (
+          category === "all" ||
+          AdminFilterService.normalize(book.category) === category
+        ) &&
+        AdminFilterService.matches(query, [
+          book.id,
+          book.title,
+          book.author,
+          book.category
+        ])
+      )
+      .sort((a, b) => {
+        const result =
+          this.#collator.compare(a.title, b.title) ||
+          this.#collator.compare(a.id, b.id);
+
+        return order === "title-desc"
+          ? -result
+          : result;
+      });
+  }
+
+  transactions(
+    records,
+    query,
+    order,
+    profileFor,
+    titleFor
+  ) {
+    return records
+      .filter(request => {
+        const profile = profileFor(request.studentUid);
+
+        return AdminFilterService.matches(query, [
+          profile.fullName,
+          profile.studentId,
+          profile.course,
+          profile.email,
+          request.studentUid,
+          titleFor(request.bookId),
+          request.bookId,
+          request.id,
+          request.status
+        ]);
+      })
+      .sort((a, b) => {
+        if (order === "newest" || order === "oldest") {
+          const stamp = item =>
+            (
+              item.cancelledAt ||
+              item.returnedAt ||
+              item.reviewedAt ||
+              item.approvedAt ||
+              item.requestedAt
+            )?.toMillis?.() || 0;
+
+          return order === "oldest"
+            ? stamp(a) - stamp(b)
+            : stamp(b) - stamp(a);
+        }
+
+        const result = this.#collator.compare(
+          profileFor(a.studentUid).fullName,
+          profileFor(b.studentUid).fullName
+        );
+
+        return (
+          order === "name-desc" ? -result : result
+        ) || this.#collator.compare(a.id, b.id);
+      });
+  }
+}
+
+
+// =====================================================
+// OBJECTS AND STATE
+// =====================================================
+
+const adminBorrowingService =
+  new AdminBorrowingService(db, auth);
+
+const adminCatalogueService =
+  new AdminCatalogueService(db, auth);
+
+const adminProfileService =
+  new AdminProfileService(auth);
+
+const adminFilterService =
+  new AdminFilterService();
+
+let currentAdminProfile = null;
 let currentUser = null;
 let currentView = "pending";
+
+let booksQuery = "";
+let transactionsQuery = "";
+
 let books = new Map();
 let requests = [];
 
@@ -50,118 +751,16 @@ let version = 0;
 let loggingOut = false;
 let toastTimer = null;
 let overdueSignature = "";
+
 const borrowerProfiles = new Map();
 const profileSubscriptions = new Map();
-
-function isOverdue(request, now = Date.now()) {
-  const due = request.dueAt?.toMillis?.();
-  return request.status === "approved" && Number.isFinite(due) && due <= now;
-}
-
-function stopBorrowerProfiles() {
-  profileSubscriptions.forEach((stop) => stop());
-  profileSubscriptions.clear();
-  borrowerProfiles.clear();
-}
-
-function syncBorrowerProfiles(session) {
-  const uids = new Set(requests.map((request) => request.studentUid)
-    .filter((uid) => typeof uid === "string" && uid && !uid.includes("/")));
-  for (const [uid, stop] of profileSubscriptions) {
-    if (!uids.has(uid)) {
-      stop();
-      profileSubscriptions.delete(uid);
-      borrowerProfiles.delete(uid);
-    }
-  }
-  for (const uid of uids) {
-    if (profileSubscriptions.has(uid)) continue;
-    borrowerProfiles.set(uid, { state: "loading" });
-    const stop = onSnapshot(doc(db, "users", uid), (snapshot) => {
-      if (session !== version) return;
-      borrowerProfiles.set(uid, snapshot.exists()
-        ? { state: "ready", data: snapshot.data() }
-        : { state: "missing" });
-      renderRequests();
-      renderNotifications();
-    }, (error) => {
-      if (session !== version) return;
-      borrowerProfiles.set(uid, { state: "error", code: error.code });
-      renderRequests();
-      renderNotifications();
-    });
-    profileSubscriptions.set(uid, stop);
-  }
-}
-
-function borrowerName(uid) {
-  const profile = borrowerProfiles.get(uid);
-  return profile?.state === "ready" && profile.data.fullName
-    ? profile.data.fullName : uid || "Unknown borrower";
-}
-
-function appendBorrowerDetails(details, uid) {
-  const profile = borrowerProfiles.get(uid);
-  if (profile?.state === "ready") {
-    const data = profile.data;
-    details.append(
-      node("p", "borrower-name", `Borrower: ${data.fullName || "Not provided"}`),
-      node("p", "", `Student ID: ${data.studentId || "Not provided"}`),
-      node("p", "", `Course: ${data.course || "Not provided"}`),
-      node("p", "", `Email: ${data.email || "Not provided"}`)
-    );
-  } else {
-    details.append(node("p", "profile-note", profile?.state === "error"
-      ? `Unable to read borrower profile (${profile.code}). Check Firestore Rules.`
-      : profile?.state === "missing"
-        ? "Student profile not provided. Ask the borrower to complete Settings."
-        : "Loading borrower profile..."));
-  }
-  details.append(node("p", "borrower-uid", `Borrower UID: ${uid || "Not recorded"}`));
-}
-
-function eventMillis(request) {
-  const value = request.cancelledAt || request.returnedAt || request.reviewedAt
-    || request.approvedAt || request.requestedAt;
-  return value?.toMillis?.() || 0;
-}
-
-function renderNotifications() {
-  const pending = requests.filter((request) => request.status === "pending").length;
-  const overdue = requests.filter((request) => isOverdue(request)).length;
-  $("admin-notification-text").textContent = requestsError || (!requestsLoaded
-    ? "Loading requests..."
-    : `${pending} pending requests · ${overdue} overdue books`);
-  const container = $("admin-notification-list");
-  container.replaceChildren();
-  if (requestsError || !requestsLoaded) return;
-  const recent = [...requests].sort((a, b) =>
-    Number(isOverdue(b)) - Number(isOverdue(a)) || eventMillis(b) - eventMillis(a)
-  ).slice(0, 5);
-  if (!recent.length) {
-    container.append(node("p", "", "No borrowing updates yet."));
-  }
-  for (const request of recent) {
-    const overdue = isOverdue(request);
-    const button = node("button", `notification-item${overdue ? " notification-overdue" : ""}`);
-    const label = overdue ? "Overdue" : ({ pending: "Pending request", approved: "Borrowed",
-      returned: "Returned", rejected: "Rejected", cancelled: "Cancelled by student" }[request.status] || request.status);
-    button.type = "button";
-    button.append(node("strong", "", `${label}: ${titleFor(request.bookId)}`),
-      node("span", "", borrowerName(request.studentUid)),
-      node("span", "", overdue ? `Due: ${dateText(request.dueAt)}`
-        : dateText(request.cancelledAt || request.returnedAt || request.reviewedAt || request.approvedAt || request.requestedAt)));
-    button.addEventListener("click", () => setView(request.status === "pending" ? "pending"
-      : request.status === "approved" ? "approved" : "history"));
-    container.append(button);
-  }
-}
-
-
 const processing = new Set();
 
-// Display books from the student catalogue.
-// Actual inventory comes from Firestore.
+
+// =====================================================
+// CATALOGUE EXAMPLES
+// =====================================================
+
 const studentCatalogueDefaults = [
   ["money", "The Psychology of Money", "Morgan Housel", "Finance", "#789483", "#ffffff"],
   ["innovation", "How Innovation Works", "Matt Ridley", "Science", "#f5d52c", "#263b42"],
@@ -194,7 +793,11 @@ const pages = {
   ]
 };
 
-// General helpers
+
+// =====================================================
+// HELPERS
+// =====================================================
+
 function node(tag, className = "", text) {
   const item = document.createElement(tag);
   item.className = className;
@@ -206,7 +809,24 @@ function node(tag, className = "", text) {
   return item;
 }
 
-// Firestore timestamp → Philippine date AND time
+function createIcon(name) {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  const use = document.createElementNS(ns, "use");
+
+  svg.classList.add("icon");
+  svg.setAttribute("aria-hidden", "true");
+  use.setAttribute("href", `#i-${name}`);
+  svg.append(use);
+
+  return svg;
+}
+
+// Polymorphic presentation for AdminBook and AdminProfile.
+function recordHeading(record, tag = "h3") {
+  return node(tag, "", record.getSummary().title);
+}
+
 function dateText(value) {
   if (!value?.toDate) return "Timestamp not recorded";
 
@@ -220,15 +840,80 @@ function dateText(value) {
 
 function titleFor(id) {
   return books.get(id)?.title ||
-    studentCatalogueDefaults.find((book) => book.id === id)?.title ||
+    studentCatalogueDefaults.find(book => book.id === id)?.title ||
     id;
 }
 
-function closeMenus() {
-  document.querySelectorAll("[data-dropdown]").forEach((button) => {
-    const panel = $(button.dataset.dropdown);
-    if (panel) panel.hidden = true;
+function isOverdue(request, now = Date.now()) {
+  const due = request.dueAt?.toMillis?.();
 
+  return request.status === "approved" &&
+    Number.isFinite(due) &&
+    due <= now;
+}
+
+function eventMillis(request) {
+  const value =
+    request.cancelledAt ||
+    request.returnedAt ||
+    request.reviewedAt ||
+    request.approvedAt ||
+    request.requestedAt;
+
+  return value?.toMillis?.() || 0;
+}
+
+// Interpret date/time picker values as Philippine time.
+function toManilaInput(millis) {
+  return new Date(
+    millis + 8 * 60 * 60 * 1000
+  ).toISOString().slice(0, 16);
+}
+
+function parseManilaInput(value) {
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
+
+  if (!match) return NaN;
+
+  const [, year, month, day, hour, minute] =
+    match.map(Number);
+
+  const millis = Date.UTC(
+    year,
+    month - 1,
+    day,
+    hour - 8,
+    minute
+  );
+
+  return Number.isFinite(millis) &&
+    toManilaInput(millis) === value
+      ? millis
+      : NaN;
+}
+
+function borrowerFor(uid) {
+  const entry = borrowerProfiles.get(uid);
+
+  return entry?.state === "ready"
+    ? {
+        ...entry.data,
+        fullName: entry.data.fullName || uid
+      }
+    : {
+        fullName: uid || "Unknown borrower",
+        studentId: "",
+        course: "",
+        email: ""
+      };
+}
+
+function closeMenus() {
+  document.querySelectorAll("[data-dropdown]").forEach(button => {
+    const panel = $(button.dataset.dropdown);
+
+    if (panel) panel.hidden = true;
     button.setAttribute("aria-expanded", "false");
   });
 }
@@ -239,7 +924,11 @@ function closeSidebar() {
   $("menu-button").setAttribute("aria-expanded", "false");
 }
 
-// Green success / red error / blue information
+
+// =====================================================
+// TOAST NOTIFICATIONS
+// =====================================================
+
 function message(text, error = false, kind = "success") {
   clearTimeout(toastTimer);
   $("dashboard-toast")?.remove();
@@ -306,31 +995,33 @@ function message(text, error = false, kind = "success") {
     }, 6000);
   }
 
-  toast.addEventListener("pointerenter", () => {
-    clearTimeout(toastTimer);
-  });
-
-  toast.addEventListener("focusin", () => {
-    clearTimeout(toastTimer);
-  });
-
+  toast.addEventListener("pointerenter", () => clearTimeout(toastTimer));
+  toast.addEventListener("focusin", () => clearTimeout(toastTimer));
   toast.addEventListener("pointerleave", scheduleDismiss);
   toast.addEventListener("focusout", scheduleDismiss);
 
   scheduleDismiss();
 }
 
-// Profile
+
+// =====================================================
+// PROFILE
+// =====================================================
+
 function fillAvatar(target, user) {
   if (!target) return;
 
-  const name = user.displayName || user.email || "Admin";
+  const name =
+    currentAdminProfile?.name ||
+    user.displayName ||
+    user.email ||
+    "Admin";
 
   target.textContent = name
     .trim()
     .split(/\s+/)
     .slice(0, 2)
-    .map((part) => Array.from(part)[0])
+    .map(part => Array.from(part)[0])
     .join("")
     .toUpperCase();
 
@@ -345,81 +1036,224 @@ function fillAvatar(target, user) {
     image.alt = "";
     image.referrerPolicy = "no-referrer";
     image.addEventListener("error", () => image.remove());
-
     target.append(image);
   } catch {
-    // Keep initials if no valid photo is available.
+    // Keep initials.
   }
 }
 
 function fillProfile(user) {
-  $("admin-name").textContent =
-    user.displayName || user.email || "Admin";
+  const profile =
+    currentAdminProfile || new AdminProfile(user);
 
-  $("profile-name").textContent = user.displayName || "Admin";
-  $("profile-email").textContent = user.email || "No email provided";
+  $("admin-name").textContent = profile.name;
+  $("profile-name").textContent = profile.name;
+  $("profile-email").textContent = profile.email || "No email provided";
 
   $("profile-role").textContent =
-    "Admin / Librarian · Email verified";
+    `Admin / Librarian · ${
+      profile.verified ? "Email verified" : "Email not verified"
+    }`;
 
   fillAvatar($("avatar"), user);
   fillAvatar($("profile-avatar"), user);
 }
 
-function showProfile() {
-  if (!currentUser) return;
+function showProfile(editing = false) {
+  if (
+    !currentUser ||
+    !currentAdminProfile ||
+    document.querySelector("dialog[open]")
+  ) {
+    return;
+  }
 
   closeMenus();
 
-  const dialog = node("dialog", "ui-dialog");
-  const heading = node("h2", "", "Profile details");
+  const profile = currentAdminProfile;
+  const dialog = node("dialog", "ui-dialog admin-profile-dialog");
+
+  const heading = node(
+    "h2",
+    "",
+    editing ? "Edit profile" : "Profile details"
+  );
 
   heading.id = "profile-dialog-title";
   dialog.setAttribute("aria-labelledby", heading.id);
 
-  const details = node("dl", "profile-fields");
+  const identity = node("div", "profile-identity");
+  const avatar = node("span", "avatar");
+  fillAvatar(avatar, currentUser);
+
+  identity.append(avatar, recordHeading(profile));
+  dialog.append(heading, identity);
+
+  const details = node("dl", "profile-detail-list");
 
   const fields = [
-    ["Full name", currentUser.displayName || "Not provided"],
-    ["Email address", currentUser.email || "Not provided"],
-    ["Role", "Admin / Librarian"],
-    ["Email status", currentUser.emailVerified ? "Verified" : "Not verified"],
-    ["User ID", currentUser.uid]
+    ["user", "Full name", profile.name],
+    ["mail", "Email address", profile.email || "Not provided"],
+    ["shield", "Role", "Admin / Librarian"],
+    ["check", "Email status", profile.verified ? "Verified" : "Not verified"],
+    ["key", "User ID", profile.id]
   ];
 
-  fields.forEach(([label, value]) => {
-    details.append(node("dt", "", label), node("dd", "", value));
+  fields.forEach(([icon, label, value]) => {
+    if (editing && label === "Full name") return;
+
+    const row = node("div", "profile-detail-row");
+    const text = node("div");
+
+    text.append(
+      node("dt", "", label),
+      node("dd", "", value)
+    );
+
+    row.append(createIcon(icon), text);
+    details.append(row);
   });
 
-  const form = node("form");
-  form.method = "dialog";
+  if (!editing) {
+    const actions = node("div", "dialog-actions");
+    const close = node("button", "ui-neutral", "Close");
+    close.type = "button";
+    close.autofocus = true;
+    close.addEventListener("click", () => dialog.close());
 
-  const actions = node("div", "dialog-actions");
-  const close = node("button", "ui-neutral", "Close");
-  close.autofocus = true;
+    const edit = node("button", "ui-success");
+    edit.type = "button";
 
-  actions.append(close);
-  form.append(actions);
-  dialog.append(heading, details, form);
+    edit.append(
+      createIcon("edit"),
+      node("span", "", "Edit profile")
+    );
 
-  dialog.addEventListener(
-    "close",
-    () => dialog.remove(),
-    { once: true }
-  );
+    edit.addEventListener("click", () => {
+      dialog.close();
+      showProfile(true);
+    });
 
+    actions.append(close, edit);
+    dialog.append(details, actions);
+  } else {
+    const form = node("form", "admin-profile-form");
+    const label = node("label");
+    const caption = node("span", "profile-input-label");
+
+    caption.append(
+      createIcon("user"),
+      node("span", "", "Full name")
+    );
+
+    const input = node("input");
+    input.id = "admin-profile-full-name";
+    input.value = profile.name;
+    input.autocomplete = "name";
+    input.maxLength = 100;
+    input.required = true;
+
+    label.append(caption, input);
+
+    const actions = node("div", "dialog-actions");
+    const cancel = node("button", "ui-neutral", "Cancel");
+    cancel.type = "button";
+    cancel.addEventListener("click", () => dialog.close());
+
+    const save = node("button", "ui-success");
+    save.type = "submit";
+
+    save.append(
+      createIcon("save"),
+      node("span", "", "Save profile")
+    );
+
+    actions.append(cancel, save);
+
+    form.append(
+      label,
+      node(
+        "p",
+        "hint",
+        "Email and role are shown for reference and cannot be changed here."
+      ),
+      details,
+      actions
+    );
+
+    let saving = false;
+
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+
+      if (saving || !form.reportValidity()) return;
+
+      const session = version;
+      saving = true;
+      save.disabled = true;
+      input.readOnly = true;
+      save.textContent = "Saving...";
+
+      try {
+        const updated = await adminProfileService.updateName(
+          profile,
+          input.value
+        );
+
+        if (session !== version) return;
+
+        currentAdminProfile = updated;
+        fillProfile(currentUser);
+        dialog.close();
+        message("Admin profile updated successfully.");
+      } catch (error) {
+        if (session === version) {
+          message(
+            error.code
+              ? `Unable to update profile (${error.code}). Try again.`
+              : error.message,
+            true
+          );
+        }
+      } finally {
+        saving = false;
+        save.disabled = false;
+        input.readOnly = false;
+
+        save.replaceChildren(
+          createIcon("save"),
+          node("span", "", "Save profile")
+        );
+      }
+    });
+
+    dialog.append(form);
+  }
+
+  dialog.addEventListener("close", () => dialog.remove(), { once: true });
   document.body.append(dialog);
   dialog.showModal();
+
+  if (editing) $("admin-profile-full-name").focus();
 }
 
-// Confirmation
+
+// =====================================================
+// CONFIRMATION WITH OPTIONAL DUE DATE/TIME
+// =====================================================
+
 function ask(
   title,
   description,
   yesLabel,
   danger = false,
-  needsReason = false
+  needsReason = false,
+  needsDue = false
 ) {
+  if (document.querySelector("dialog[open]")) {
+    return Promise.resolve(null);
+  }
+
   closeMenus();
 
   const dialog = node("dialog", "ui-dialog");
@@ -437,6 +1271,20 @@ function ask(
           rows="3"
         ></textarea>
       </label>
+
+      <div id="due-fields">
+        <label for="approval-due">
+          Due date and time (Philippine time)
+        </label>
+        <input
+          type="datetime-local"
+          id="approval-due"
+          step="60"
+        >
+        <p class="hint">
+          PHT / UTC+08:00. Select when the book must be returned.
+        </p>
+      </div>
 
       <div class="dialog-actions">
         <button
@@ -464,14 +1312,58 @@ function ask(
   $("reason-label").hidden = !needsReason;
   $("confirmation-reason").required = needsReason;
   $("confirmation-yes").textContent = yesLabel;
+  $("confirmation-yes").className = danger ? "ui-danger" : "ui-success";
 
-  $("confirmation-yes").className =
-    danger ? "ui-danger" : "ui-success";
+  const due = dialog.querySelector("#approval-due");
 
-  return new Promise((resolve) => {
+  dialog.querySelector("#due-fields").hidden = !needsDue;
+  due.required = needsDue;
+
+  if (needsDue) {
+    due.min = toManilaInput(
+      Math.ceil((Date.now() + 1) / 60000) * 60000
+    );
+
+    // Default suggestion only; the librarian can choose another date.
+    due.value = toManilaInput(
+      Date.now() + 7 * 86400000
+    );
+
+    due.addEventListener("input", () => {
+      due.setCustomValidity("");
+    });
+
+    dialog.querySelector("form").addEventListener("submit", event => {
+      if (event.submitter?.value !== "confirm") return;
+
+      const millis = parseManilaInput(due.value);
+
+      if (!Number.isFinite(millis) || millis <= Date.now()) {
+        event.preventDefault();
+
+        due.setCustomValidity(
+          "Choose a future due date and time in Philippine time."
+        );
+
+        due.reportValidity();
+      }
+    });
+  }
+
+  return new Promise(resolve => {
     dialog.addEventListener("close", () => {
       const answer = dialog.returnValue === "confirm"
-        ? { reason: $("confirmation-reason").value.trim() }
+        ? {
+            reason: dialog.querySelector(
+              "#confirmation-reason"
+            ).value.trim(),
+
+            dueAt: needsDue
+              ? Timestamp.fromMillis(
+                  parseManilaInput(due.value)
+                )
+              : null
+          }
         : null;
 
       dialog.remove();
@@ -482,18 +1374,211 @@ function ask(
   });
 }
 
-// Dashboard
-function refresh() {
+
+// =====================================================
+// BORROWER PROFILES
+// =====================================================
+
+function stopBorrowerProfiles() {
+  profileSubscriptions.forEach(stop => stop());
+  profileSubscriptions.clear();
+  borrowerProfiles.clear();
+}
+
+function syncBorrowerProfiles(session) {
+  const uids = new Set(
+    requests.map(request => request.studentUid).filter(
+      uid => typeof uid === "string" && uid && !uid.includes("/")
+    )
+  );
+
+  for (const [uid, stop] of profileSubscriptions) {
+    if (!uids.has(uid)) {
+      stop();
+      profileSubscriptions.delete(uid);
+      borrowerProfiles.delete(uid);
+    }
+  }
+
+  for (const uid of uids) {
+    if (profileSubscriptions.has(uid)) continue;
+
+    borrowerProfiles.set(uid, { state: "loading" });
+
+    const stop = onSnapshot(
+      doc(db, "users", uid),
+      snapshot => {
+        if (session !== version) return;
+
+        borrowerProfiles.set(
+          uid,
+          snapshot.exists()
+            ? { state: "ready", data: snapshot.data() }
+            : { state: "missing" }
+        );
+
+        renderRequests();
+        renderNotifications();
+      },
+      error => {
+        if (session !== version) return;
+
+        borrowerProfiles.set(uid, {
+          state: "error",
+          code: error.code
+        });
+
+        renderRequests();
+        renderNotifications();
+      }
+    );
+
+    profileSubscriptions.set(uid, stop);
+  }
+}
+
+function borrowerName(uid) {
+  const profile = borrowerProfiles.get(uid);
+
+  return profile?.state === "ready" && profile.data.fullName
+    ? profile.data.fullName
+    : uid || "Unknown borrower";
+}
+
+function appendBorrowerDetails(details, uid) {
+  const profile = borrowerProfiles.get(uid);
+
+  if (profile?.state === "ready") {
+    const data = profile.data;
+
+    details.append(
+      node(
+        "p",
+        "borrower-name",
+        `Borrower: ${data.fullName || "Not provided"}`
+      ),
+      node("p", "", `Student ID: ${data.studentId || "Not provided"}`),
+      node("p", "", `Course: ${data.course || "Not provided"}`),
+      node("p", "", `Email: ${data.email || "Not provided"}`)
+    );
+  } else {
+    const text = profile?.state === "error"
+      ? `Unable to read borrower profile (${profile.code}). Check Firestore Rules.`
+      : profile?.state === "missing"
+        ? "Student profile not provided. Ask the borrower to complete Settings."
+        : "Loading borrower profile...";
+
+    details.append(node("p", "profile-note", text));
+  }
+
+  details.append(
+    node(
+      "p",
+      "borrower-uid",
+      `Borrower UID: ${uid || "Not recorded"}`
+    )
+  );
+}
+
+
+// =====================================================
+// NOTIFICATION DROPDOWN AND DASHBOARD COUNTS
+// =====================================================
+
+function renderNotifications() {
   const pending = requests.filter(
-    (request) => request.status === "pending"
+    request => request.status === "pending"
   ).length;
 
+  const overdue = requests.filter(
+    request => isOverdue(request)
+  ).length;
+
+  $("admin-notification-text").textContent =
+    requestsError || (
+      !requestsLoaded
+        ? "Loading requests..."
+        : `${pending} pending requests · ${overdue} overdue books`
+    );
+
+  const container = $("admin-notification-list");
+  container.replaceChildren();
+
+  if (requestsError || !requestsLoaded) return;
+
+  const recent = [...requests].sort(
+    (a, b) =>
+      Number(isOverdue(b)) - Number(isOverdue(a)) ||
+      eventMillis(b) - eventMillis(a)
+  ).slice(0, 5);
+
+  if (!recent.length) {
+    container.append(node("p", "", "No borrowing updates yet."));
+  }
+
+  const labels = {
+    pending: "Pending request",
+    approved: "Borrowed",
+    returned: "Returned",
+    rejected: "Rejected",
+    cancelled: "Cancelled by student"
+  };
+
+  for (const request of recent) {
+    const overdue = isOverdue(request);
+
+    const button = node(
+      "button",
+      `notification-item${overdue ? " notification-overdue" : ""}`
+    );
+
+    button.type = "button";
+
+    const label = overdue
+      ? "Overdue"
+      : labels[request.status] || request.status;
+
+    button.append(
+      node("strong", "", `${label}: ${titleFor(request.bookId)}`),
+      node("span", "", borrowerName(request.studentUid)),
+      node(
+        "span",
+        "",
+        overdue
+          ? `Due: ${dateText(request.dueAt)}`
+          : dateText(
+              request.cancelledAt ||
+              request.returnedAt ||
+              request.reviewedAt ||
+              request.approvedAt ||
+              request.requestedAt
+            )
+      )
+    );
+
+    button.addEventListener("click", () => {
+      setView(
+        request.status === "pending"
+          ? "pending"
+          : request.status === "approved"
+            ? "approved"
+            : "history"
+      );
+    });
+
+    container.append(button);
+  }
+}
+
+function refresh() {
   $("pending-count").textContent =
-    requestsLoaded && !requestsError ? pending : "—";
+    requestsLoaded && !requestsError
+      ? requests.filter(request => request.status === "pending").length
+      : "—";
 
   $("borrowed-count").textContent =
     requestsLoaded && !requestsError
-      ? requests.filter((request) => request.status === "approved").length
+      ? requests.filter(request => request.status === "approved").length
       : "—";
 
   $("copies-count").textContent =
@@ -507,10 +1592,12 @@ function refresh() {
         }, 0)
       : "—";
 
-  $("overdue-count").textContent = requestsLoaded && !requestsError
-    ? requests.filter((request) => isOverdue(request)).length : "—";
-  renderNotifications();
+  $("overdue-count").textContent =
+    requestsLoaded && !requestsError
+      ? requests.filter(request => isOverdue(request)).length
+      : "—";
 
+  renderNotifications();
   renderRequests();
   renderBooks();
 }
@@ -525,7 +1612,18 @@ function setView(view) {
   $("requests-panel").hidden = view === "books";
   $("books-panel").hidden = view !== "books";
 
-  document.querySelectorAll("[data-view]").forEach((button) => {
+  $("book-tools").hidden = view !== "books";
+  $("transaction-tools").hidden = view === "books";
+
+  $("admin-search").value = view === "books"
+    ? booksQuery
+    : transactionsQuery;
+
+  $("admin-search").placeholder = view === "books"
+    ? "Search title, author, category or Book ID..."
+    : "Search borrower, Student ID, email or book...";
+
+  document.querySelectorAll("[data-view]").forEach(button => {
     const active = button.dataset.view === view;
     button.classList.toggle("active", active);
 
@@ -542,6 +1640,11 @@ function setView(view) {
   refresh();
 }
 
+
+// =====================================================
+// TRANSACTION LIST
+// =====================================================
+
 function actionButton(text, className, request, action) {
   const button = node("button", className, text);
   button.type = "button";
@@ -554,47 +1657,72 @@ function actionButton(text, className, request, action) {
   return button;
 }
 
-// Requests, loans, and history
 function renderRequests() {
+  if (currentView === "books") return;
+
   const container = $("request-list");
   container.replaceChildren();
 
   if (requestsError || !requestsLoaded) {
-    container.append(node(
-      "p",
-      "empty",
-      requestsError || "Loading requests..."
-    ));
+    $("results-summary").textContent = "";
+
+    container.append(
+      node("p", "empty", requestsError || "Loading requests...")
+    );
+
     return;
   }
 
-  const rows = requests.filter((request) =>
+  const section = requests.filter(request =>
     currentView === "history"
       ? ["returned", "rejected", "cancelled"].includes(request.status)
       : request.status === currentView
   );
 
+  const rows = adminFilterService.transactions(
+    section,
+    transactionsQuery,
+    $("transaction-sort").value,
+    borrowerFor,
+    titleFor
+  );
+
+  $("results-summary").textContent =
+    `${rows.length} of ${section.length} transactions`;
+
   if (!rows.length) {
+    const loadingNames = transactionsQuery &&
+      [...borrowerProfiles.values()].some(
+        item => item.state === "loading"
+      );
+
     container.append(node(
       "p",
       "empty",
-      "No records in this section yet."
+      loadingNames
+        ? "Loading borrower details..."
+        : section.length
+          ? "No matching transactions. Try another name, Student ID, or book title."
+          : "No records in this section yet."
     ));
+
     return;
   }
 
-  rows.sort((a, b) => currentView === "approved"
-    ? Number(isOverdue(b)) - Number(isOverdue(a)) || (a.dueAt?.toMillis?.() || Infinity) - (b.dueAt?.toMillis?.() || Infinity)
-    : currentView === "history" ? eventMillis(b) - eventMillis(a)
-    : (b.requestedAt?.toMillis?.() || 0) - (a.requestedAt?.toMillis?.() || 0));
+  rows.forEach(request => {
+    const overdue = isOverdue(request);
 
-  rows.forEach((request) => {
-    const card = node("article", `record${isOverdue(request) ? " record-overdue" : ""}`);
+    const card = node(
+      "article",
+      `record${overdue ? " record-overdue" : ""}`
+    );
+
     const details = node("div", "record-details");
     const actions = node("div", "record-actions");
 
     details.append(node("h3", "", titleFor(request.bookId)));
     appendBorrowerDetails(details, request.studentUid);
+
     details.append(
       node(
         "p",
@@ -616,7 +1744,7 @@ function renderRequests() {
       ));
 
       const approve = actionButton(
-        "Approve · 7 days",
+        "Approve request",
         "primary",
         request,
         "approve"
@@ -633,11 +1761,20 @@ function renderRequests() {
         actionButton("Reject", "danger", request, "reject")
       );
     } else if (request.status === "approved") {
-      actions.append(node("span", isOverdue(request) ? "badge badge-overdue" : "badge badge-approved",
-        isOverdue(request) ? "Overdue" : "Borrowed"));
-      if (isOverdue(request)) {
-        details.append(node("p", "overdue-reminder", "Past the due date. Follow up with the borrower for return."));
+      actions.append(node(
+        "span",
+        overdue ? "badge badge-overdue" : "badge badge-approved",
+        overdue ? "Overdue" : "Borrowed"
+      ));
+
+      if (overdue) {
+        details.append(node(
+          "p",
+          "overdue-reminder",
+          "Past the due date. Follow up with the borrower for return."
+        ));
       }
+
       if (request.approvedAt) {
         details.append(node(
           "p",
@@ -652,12 +1789,9 @@ function renderRequests() {
         `Due: ${dateText(request.dueAt)}`
       ));
 
-      actions.append(actionButton(
-      "Mark Returned?",
-        "secondary",
-        request,
-        "return"
-      ));
+      actions.append(
+        actionButton("Mark Returned?", "secondary", request, "return")
+      );
     } else {
       if (request.status === "returned") {
         details.append(node(
@@ -676,27 +1810,35 @@ function renderRequests() {
       }
 
       if (request.status === "cancelled") {
-        details.append(node("p", "request-timestamp", `Cancelled: ${dateText(request.cancelledAt)}`));
-        details.append(node("p", "", "Cancelled by the student before approval. No copy was issued."));
+        details.append(
+          node(
+            "p",
+            "request-timestamp",
+            `Cancelled: ${dateText(request.cancelledAt)}`
+          ),
+          node(
+            "p",
+            "",
+            "Cancelled by the student before approval. No copy was issued."
+          )
+        );
       }
 
       if (request.reason) {
         details.append(node("p", "", request.reason));
       }
 
-     const statusLabels = {
-  returned: "Returned",
-  rejected: "Rejected",
-  cancelled: "Cancelled"
-};
+      const statusLabels = {
+        returned: "Returned",
+        rejected: "Rejected",
+        cancelled: "Cancelled"
+      };
 
-actions.append(
-  node(
-    "span",
-    `badge badge-${request.status}`,
-    statusLabels[request.status] || request.status
-  )
-);
+      actions.append(node(
+        "span",
+        `badge badge-${request.status}`,
+        statusLabels[request.status] || request.status
+      ));
     }
 
     card.append(details, actions);
@@ -705,7 +1847,14 @@ actions.append(
 }
 
 async function processRequest(request, action) {
-  if (!currentUser || processing.has(request.id) || document.querySelector("dialog[open]") || !["approve", "reject", "return"].includes(action)) return;
+  if (
+    !currentUser ||
+    processing.has(request.id) ||
+    document.querySelector("dialog[open]") ||
+    !["approve", "reject", "return"].includes(action)
+  ) {
+    return;
+  }
 
   const session = version;
   const user = currentUser;
@@ -716,7 +1865,7 @@ async function processRequest(request, action) {
   const prompts = {
     approve: [
       "Approve this request?",
-      "Issue one copy with a 7-day due date?",
+      "Select the due date and time before issuing one copy.",
       "Yes, approve"
     ],
     reject: [
@@ -735,10 +1884,17 @@ async function processRequest(request, action) {
     const answer = await ask(
       ...prompts[action],
       action === "reject",
-      action === "reject"
+      action === "reject",
+      action === "approve"
     );
 
-    if (!answer || session !== version || auth.currentUser?.uid !== user.uid) return;
+    if (
+      !answer ||
+      session !== version ||
+      auth.currentUser?.uid !== user.uid
+    ) {
+      return;
+    }
 
     if (action === "reject" && !answer.reason) {
       throw new Error("Please enter a rejection reason.");
@@ -746,101 +1902,29 @@ async function processRequest(request, action) {
 
     message("Processing request...", false, "info");
 
-    await runTransaction(db, async (transaction) => {
-      const requestRef = doc(db, "borrowRequests", request.id);
-      const snapshot = await transaction.get(requestRef);
-
-      if (!snapshot.exists()) {
-        throw new Error("This request no longer exists.");
-      }
-
-      const data = snapshot.data();
-      const expectedStatus =
-        action === "return" ? "approved" : "pending";
-
-      if (data.status !== expectedStatus) {
-        throw new Error("This request has already been processed.");
-      }
-
-      const bookRef = doc(db, "books", data.bookId);
-      const lockRef = doc(
-        db,
-        "borrowLocks",
-        `${data.studentUid}_${data.bookId}`
+    if (action === "approve") {
+      await adminBorrowingService.approve(
+        currentAdminProfile,
+        request.id,
+        answer.dueAt
       );
-
-      const bookSnapshot = await transaction.get(bookRef);
-      const lock = await transaction.get(lockRef);
-
-      if (
-        !lock.exists() ||
-        lock.data().requestId !== request.id
-      ) {
-        throw new Error(
-          "The active borrowing record is inconsistent. Review it first."
-        );
-      }
-
-      if (action === "reject") {
-        transaction.update(requestRef, {
-          status: "rejected",
-          reason: answer.reason,
-          reviewedAt: serverTimestamp(),
-          reviewedBy: user.uid
-        });
-
-        transaction.delete(lockRef);
-        return;
-      }
-
-      const copies = bookSnapshot.data()?.availableCopies;
-
-      if (
-        !bookSnapshot.exists() ||
-        !Number.isSafeInteger(copies) ||
-        copies < 0
-      ) {
-        throw new Error("Book inventory needs correcting.");
-      }
-
-      if (action === "approve") {
-        if (copies <= 0) {
-          throw new Error(
-            "No copies available. The request was not approved."
-          );
-        }
-
-        transaction.update(bookRef, {
-          availableCopies: copies - 1
-        });
-
-        transaction.update(requestRef, {
-          status: "approved",
-          approvedAt: serverTimestamp(),
-          approvedBy: user.uid,
-          dueAt: Timestamp.fromMillis(
-            Date.now() + 7 * 86400000
-          )
-        });
-      } else {
-        transaction.update(bookRef, {
-          availableCopies: copies + 1
-        });
-
-        transaction.update(requestRef, {
-          status: "returned",
-          returnedAt: serverTimestamp(),
-          returnedBy: user.uid
-        });
-
-        transaction.delete(lockRef);
-      }
-    });
+    } else if (action === "reject") {
+      await adminBorrowingService.reject(
+        currentAdminProfile,
+        request.id,
+        answer.reason
+      );
+    } else {
+      await adminBorrowingService.returnBook(
+        currentAdminProfile,
+        request.id
+      );
+    }
 
     if (session === version) {
       message(
         action === "approve"
-          ? "Request approved successfully. One copy issued for 7 days."
+          ? `Request approved successfully. Due: ${dateText(answer.dueAt)}.`
           : action === "reject"
             ? "Request rejected successfully. Inventory unchanged."
             : "Book returned successfully. One copy restored."
@@ -864,51 +1948,96 @@ async function processRequest(request, action) {
   }
 }
 
-// Full catalogue
+
+// =====================================================
+// MANAGE BOOKS
+// =====================================================
+
 function adminCatalogueBooks() {
-  const merged = new Map(
-    studentCatalogueDefaults.map((book) => [
-      book.id,
-      { ...book, registered: false }
-    ])
-  );
-
-  books.forEach((data, id) => {
-    const previous = merged.get(id);
-
-    merged.set(id, {
-      color: "#738baa",
-      ink: "#ffffff",
-      ...previous,
-      ...data,
-      id,
-      registered: true,
-      title: data.title || previous?.title || id,
-      author: data.author || previous?.author || "Unknown author",
-      category: data.category || previous?.category || "General"
-    });
-  });
-
-  return [...merged.values()].sort((a, b) =>
-    a.title.localeCompare(b.title)
+  return adminCatalogueService.getBooks(
+    studentCatalogueDefaults,
+    books
   );
 }
 
 function renderBooks() {
+  if (currentView !== "books") return;
+
   const container = $("book-list");
   container.replaceChildren();
   container.classList.add("admin-book-grid");
 
   if (booksError || !booksLoaded) {
+    $("results-summary").textContent = "";
+
     container.append(node(
       "p",
       "empty admin-catalogue-empty",
       booksError || "Loading books..."
     ));
+
     return;
   }
 
-  for (const book of adminCatalogueBooks()) {
+  const allBooks = adminCatalogueBooks();
+  const selected = $("book-category-filter").value;
+  const options = new Map();
+
+  allBooks.forEach(book => {
+    const key = AdminFilterService.normalize(book.category);
+
+    if (!options.has(key)) {
+      options.set(key, book.category);
+    }
+  });
+
+  const select = $("book-category-filter");
+  select.replaceChildren();
+
+  const allOption = node("option", "", "All categories");
+  allOption.value = "all";
+  select.append(allOption);
+
+  [...options]
+    .sort((a, b) => a[1].localeCompare(b[1]))
+    .forEach(([value, label]) => {
+      const option = node("option", "", label);
+      option.value = value;
+      select.append(option);
+    });
+
+  select.value =
+    selected === "all" || options.has(selected)
+      ? selected
+      : "all";
+
+  $("category-suggestions").replaceChildren();
+
+  options.forEach(label => {
+    const option = node("option");
+    option.value = label;
+    $("category-suggestions").append(option);
+  });
+
+  const visibleBooks = adminFilterService.books(
+    allBooks,
+    booksQuery,
+    select.value,
+    $("book-sort").value
+  );
+
+  $("results-summary").textContent =
+    `${visibleBooks.length} of ${allBooks.length} catalogue books`;
+
+  if (!visibleBooks.length) {
+    container.append(node(
+      "p",
+      "empty admin-catalogue-empty",
+      "No books match your search or category."
+    ));
+  }
+
+  for (const book of visibleBooks) {
     const card = node("article", "admin-book-card");
     const cover = node("div", "admin-book-cover");
 
@@ -945,7 +2074,7 @@ function renderBooks() {
     const details = node("div", "admin-book-details");
 
     details.append(
-      node("h3", "", book.title),
+      recordHeading(book),
       node("p", "", book.author),
       node("p", "", `Category: ${book.category}`),
       node("p", "", `Book ID: ${book.id}`),
@@ -953,6 +2082,18 @@ function renderBooks() {
     );
 
     if (book.registered) {
+      const edit = node("button", "admin-edit-book");
+      edit.type = "button";
+
+      edit.append(
+        createIcon("edit"),
+        node("span", "", "Edit book / Add copies")
+      );
+
+      edit.addEventListener("click", () => showBookEditor(book));
+
+      details.append(edit);
+
       details.append(node(
         "p",
         "admin-book-stock",
@@ -1010,8 +2151,166 @@ function renderBooks() {
   }
 }
 
-// Add Book
-$("book-form").addEventListener("submit", async (event) => {
+
+// =====================================================
+// EDIT BOOK AND ADDITIONAL COPIES
+// =====================================================
+
+function showBookEditor(book) {
+  if (
+    !currentAdminProfile ||
+    document.querySelector("dialog[open]")
+  ) {
+    return;
+  }
+
+  const profile = currentAdminProfile;
+  const dialog = node("dialog", "ui-dialog book-editor-dialog");
+  const title = node("h2", "", "Edit book / Add copies");
+
+  title.id = "book-editor-title";
+  dialog.setAttribute("aria-labelledby", title.id);
+
+  const form = node("form", "book-editor-form");
+
+  const definitions = [
+    ["edit-book-id", "Book ID", book.id, 100, true],
+    ["edit-book-title", "Title", book.title, 200, false],
+    ["edit-book-author", "Author", book.author, 150, false],
+    ["edit-book-category", "Category", book.category, 100, false]
+  ];
+
+  definitions.forEach(
+    ([id, labelText, value, max, readOnly]) => {
+      const label = node("label", "", labelText);
+      const input = node("input");
+
+      input.id = id;
+      input.value = value;
+      input.maxLength = max;
+      input.required = true;
+      input.readOnly = readOnly;
+
+      if (id === "edit-book-category") {
+        input.setAttribute("list", "category-suggestions");
+      }
+
+      label.append(input);
+      form.append(label);
+    }
+  );
+
+  form.append(node(
+    "p",
+    "hint",
+    `Available copies when opened: ${book.availableCopies}. Add copies below; existing loans stay unchanged.`
+  ));
+
+  const copiesLabel = node(
+    "label",
+    "",
+    "Additional copies (0 if unchanged)"
+  );
+
+  const copies = node("input");
+  copies.id = "edit-book-add-copies";
+  copies.type = "number";
+  copies.min = "0";
+  copies.max = "100000";
+  copies.step = "1";
+  copies.value = "0";
+  copies.required = true;
+
+  copiesLabel.append(copies);
+  form.append(copiesLabel);
+
+  const actions = node("div", "dialog-actions");
+  const cancel = node("button", "ui-neutral", "Cancel");
+  cancel.type = "button";
+  cancel.addEventListener("click", () => dialog.close());
+
+  const save = node("button", "ui-success", "Save changes");
+  save.type = "submit";
+
+  actions.append(cancel, save);
+  form.append(actions);
+
+  let saving = false;
+
+  form.addEventListener("submit", async event => {
+    event.preventDefault();
+
+    if (saving || !form.reportValidity()) return;
+
+    const session = version;
+
+    const values = {
+      title: $("edit-book-title").value.trim(),
+      author: $("edit-book-author").value.trim(),
+      category: $("edit-book-category").value.trim(),
+      addCopies: Number(copies.value)
+    };
+
+    if (copies.value.trim() === "") return;
+
+    saving = true;
+    save.disabled = true;
+    save.textContent = "Saving...";
+
+    form.querySelectorAll("input").forEach(input => {
+      input.readOnly = true;
+    });
+
+    try {
+      await adminCatalogueService.updateBook(
+        profile,
+        book.id,
+        values
+      );
+
+      if (session !== version) return;
+
+      dialog.close();
+
+      message(
+        values.addCopies
+          ? `Book updated successfully. ${values.addCopies} copies added.`
+          : "Book updated successfully."
+      );
+    } catch (error) {
+      if (session === version) {
+        message(
+          error.code
+            ? `Unable to update book (${error.code}). Check your connection and Rules.`
+            : error.message,
+          true
+        );
+      }
+    } finally {
+      saving = false;
+      save.disabled = false;
+      save.textContent = "Save changes";
+
+      form.querySelectorAll("input").forEach(input => {
+        input.readOnly = input.id === "edit-book-id";
+      });
+    }
+  });
+
+  dialog.append(title, form);
+  dialog.addEventListener("close", () => dialog.remove(), { once: true });
+
+  document.body.append(dialog);
+  dialog.showModal();
+  $("edit-book-title").focus();
+}
+
+
+// =====================================================
+// ADD BOOK
+// =====================================================
+
+$("book-form").addEventListener("submit", async event => {
   event.preventDefault();
 
   if (!currentUser || $("save-book").disabled) return;
@@ -1045,24 +2344,17 @@ $("book-form").addEventListener("submit", async (event) => {
   message("Saving book...", false, "info");
 
   try {
-    await runTransaction(db, async (transaction) => {
-      const ref = doc(db, "books", id);
-      const existing = await transaction.get(ref);
-
-      if (existing.exists()) {
-        throw new Error(
-          "Book ID already exists. Use a different ID."
-        );
-      }
-
-      transaction.set(ref, {
+    await adminCatalogueService.addBook(
+      currentAdminProfile,
+      {
+        id,
         title,
         author,
         category,
-        availableCopies: copies,
-        createdAt: serverTimestamp()
-      });
-    });
+        availableCopies: copies
+      },
+      [...books.values()].map(book => book.color).filter(Boolean)
+    );
 
     if (session === version) {
       $("book-form").reset();
@@ -1083,27 +2375,45 @@ $("book-form").addEventListener("submit", async (event) => {
   }
 });
 
-// Navigation
-document.querySelectorAll("[data-view]").forEach((button) => {
+
+// =====================================================
+// SEARCH, SORT, AND NAVIGATION EVENTS
+// =====================================================
+
+$("admin-search").addEventListener("input", () => {
+  if (currentView === "books") {
+    booksQuery = $("admin-search").value;
+    renderBooks();
+  } else {
+    transactionsQuery = $("admin-search").value;
+    renderRequests();
+  }
+});
+
+$("book-category-filter").addEventListener("change", renderBooks);
+$("book-sort").addEventListener("change", renderBooks);
+$("transaction-sort").addEventListener("change", renderRequests);
+
+document.querySelectorAll("[data-view]").forEach(button => {
   button.addEventListener("click", () => {
     setView(button.dataset.view);
   });
 });
 
-document.querySelectorAll("[data-dropdown]").forEach((button) => {
+document.querySelectorAll("[data-dropdown]").forEach(button => {
   button.addEventListener("click", () => {
     const panel = $(button.dataset.dropdown);
     if (!panel) return;
 
     const open = panel.hidden;
-
     closeMenus();
     panel.hidden = !open;
+
     button.setAttribute("aria-expanded", String(open));
   });
 });
 
-document.addEventListener("click", (event) => {
+document.addEventListener("click", event => {
   if (!event.target.closest(".action-wrap")) {
     closeMenus();
   }
@@ -1111,10 +2421,13 @@ document.addEventListener("click", (event) => {
   if (event.target.closest("[data-profile-details]")) {
     showProfile();
   }
+
+  if (event.target.closest("[data-profile-edit]")) {
+    showProfile(true);
+  }
 });
 
-// Logout
-document.querySelectorAll("[data-logout]").forEach((button) => {
+document.querySelectorAll("[data-logout]").forEach(button => {
   button.addEventListener("click", async () => {
     if (!currentUser || loggingOut) return;
 
@@ -1144,10 +2457,8 @@ document.querySelectorAll("[data-logout]").forEach((button) => {
   });
 });
 
-// Mobile navigation
 $("menu-button").addEventListener("click", () => {
   const open = !$("sidebar").classList.contains("open");
-
   $("sidebar").classList.toggle("open", open);
   $("shade").hidden = !open;
   $("menu-button").setAttribute("aria-expanded", String(open));
@@ -1155,7 +2466,7 @@ $("menu-button").addEventListener("click", () => {
 
 $("shade").addEventListener("click", closeSidebar);
 
-document.addEventListener("keydown", (event) => {
+document.addEventListener("keydown", event => {
   if (event.key !== "Escape") return;
 
   const trigger = document.querySelector(
@@ -1171,17 +2482,30 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-// Authentication and live data
-onAuthStateChanged(auth, async (user) => {
+
+// =====================================================
+// AUTHENTICATION AND LIVE FIRESTORE DATA
+// =====================================================
+
+onAuthStateChanged(auth, async user => {
   const session = ++version;
 
   stopBooks?.();
   stopRequests?.();
   stopBorrowerProfiles();
+
   overdueSignature = "";
-  document.querySelectorAll("dialog[open]").forEach((dialog) => dialog.close());
+
+  document.querySelectorAll("dialog[open]").forEach(
+    dialog => dialog.close()
+  );
 
   currentUser = null;
+  currentAdminProfile = null;
+  booksQuery = "";
+  transactionsQuery = "";
+  $("admin-search").value = "";
+
   books = new Map();
   requests = [];
   processing.clear();
@@ -1203,7 +2527,9 @@ onAuthStateChanged(auth, async (user) => {
   }
 
   try {
-    const role = await getDoc(doc(db, "roles", user.uid));
+    const role = await getDoc(
+      doc(db, "roles", user.uid)
+    );
 
     if (
       session !== version ||
@@ -1212,7 +2538,9 @@ onAuthStateChanged(auth, async (user) => {
       return;
     }
 
-    const value = role.exists() ? role.data().role : "student";
+    const value = role.exists()
+      ? role.data().role
+      : "student";
 
     if (value === "student") {
       window.location.replace("../student.html");
@@ -1226,6 +2554,8 @@ onAuthStateChanged(auth, async (user) => {
     }
 
     currentUser = user;
+    currentAdminProfile = new AdminProfile(user);
+
     fillProfile(user);
 
     $("loading").hidden = true;
@@ -1235,35 +2565,37 @@ onAuthStateChanged(auth, async (user) => {
 
     stopBooks = onSnapshot(
       collection(db, "books"),
-      (snapshot) => {
+      snapshot => {
         if (session !== version) return;
 
         booksLoaded = true;
         booksError = "";
 
         books = new Map(
-          snapshot.docs.map((item) => [item.id, item.data()])
+          snapshot.docs.map(item => [item.id, item.data()])
         );
 
         refresh();
       },
-      (error) => {
+      error => {
         if (session !== version) return;
 
-        booksError = `Unable to load inventory (${error.code}).`;
+        booksError =
+          `Unable to load inventory (${error.code}).`;
+
         refresh();
       }
     );
 
     stopRequests = onSnapshot(
       collection(db, "borrowRequests"),
-      (snapshot) => {
+      snapshot => {
         if (session !== version) return;
 
         requestsLoaded = true;
         requestsError = "";
 
-        requests = snapshot.docs.map((item) => ({
+        requests = snapshot.docs.map(item => ({
           ...item.data(),
           id: item.id
         }));
@@ -1277,7 +2609,7 @@ onAuthStateChanged(auth, async (user) => {
         syncBorrowerProfiles(session);
         refresh();
       },
-      (error) => {
+      error => {
         if (session !== version) return;
 
         requestsError =
@@ -1297,8 +2629,10 @@ onAuthStateChanged(auth, async (user) => {
   }
 });
 
-// Live Philippine clock
-// Updates the display only; it does not reload Firestore data.
+
+// =====================================================
+// PHILIPPINE CLOCK AND OVERDUE REFRESH
+// =====================================================
 
 const clockDateFormatter = new Intl.DateTimeFormat("en-PH", {
   month: "long",
@@ -1330,14 +2664,29 @@ function updateDashboardClock() {
   date.textContent = clockDateFormatter.format(now);
   time.textContent = `${clockTimeFormatter.format(now)} PHT`;
 
-  const signature = requests.filter((request) => request.status === "approved")
-    .map((request) => `${request.id}:${isOverdue(request, now.getTime())}`).sort().join("|");
+  const signature = requests
+    .filter(request => request.status === "approved")
+    .map(request =>
+      `${request.id}:${isOverdue(request, now.getTime())}`
+    )
+    .sort()
+    .join("|");
+
   if (signature !== overdueSignature) {
     overdueSignature = signature;
+
     if (currentUser) {
-      $("overdue-count").textContent = requestsLoaded && !requestsError
-        ? requests.filter((request) => isOverdue(request, now.getTime())).length : "—";
-      if (currentView === "approved") renderRequests();
+      $("overdue-count").textContent =
+        requestsLoaded && !requestsError
+          ? requests.filter(
+              request => isOverdue(request, now.getTime())
+            ).length
+          : "—";
+
+      if (currentView === "approved") {
+        renderRequests();
+      }
+
       renderNotifications();
     }
   }

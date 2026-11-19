@@ -2,6 +2,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -11,7 +15,10 @@ body {
   padding: 24px;
   font-family: Arial, Helvetica, sans-serif;
   color: #17364d;
-  background: #154568 url("./sources/MAIN\ BG.jpe") center / cover no-repeat;
+  background:
+    #154568
+    url("./sources/MAIN BG.jpe")
+    center / cover no-repeat;
 }
 
 button,
@@ -24,18 +31,12 @@ input {
   overflow: hidden;
   border-radius: 24px;
   background: #fff;
-  box-shadow: 0 24px 70px rgba(0, 25, 45, 0.3);
-}
-
-/* Remove the entire left section. */
-.welcome-panel {
-  display: none;
+  box-shadow: 0 24px 70px rgb(0 25 45 / 30%);
 }
 
 .login-panel {
   min-width: 0;
   padding: 48px;
-  background: #fff;
 }
 
 .subtitle {
@@ -47,7 +48,7 @@ input {
   line-height: 1.6;
 }
 
-h2 {
+h1 {
   margin: 0 0 10px;
   color: #15354d;
   font-size: 32px;
@@ -94,7 +95,7 @@ h2 {
   outline: none;
   border-color: #287eae;
   background: #fff;
-  box-shadow: 0 0 0 3px rgba(40, 126, 174, 0.14);
+  box-shadow: 0 0 0 3px rgb(40 126 174 / 14%);
 }
 
 .password-field {
@@ -102,7 +103,7 @@ h2 {
 }
 
 .password-field input {
-  padding-right: 68px;
+  padding-right: 72px;
 }
 
 #toggle-password {
@@ -111,7 +112,7 @@ h2 {
   right: 6px;
   height: 42px;
   padding: 0 10px;
-  border: none;
+  border: 0;
   border-radius: 6px;
   background: transparent;
   color: #24658a;
@@ -123,6 +124,49 @@ h2 {
 #toggle-password:hover {
   background: #eaf2f7;
 }
+
+/* Registration password checklist */
+
+.password-requirements {
+  margin-top: 12px;
+  padding: 13px 14px;
+  border: 1px solid #e1e8ef;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.password-requirements p {
+  margin: 0 0 8px;
+  color: #29495f;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.password-requirements ul {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.password-requirements li {
+  color: #667c8c;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.password-requirements li span {
+  display: inline-block;
+  width: 16px;
+  font-weight: 700;
+}
+
+.password-requirements li[data-met="true"] {
+  color: #166534;
+}
+
+/* Login controls */
 
 .options {
   display: flex;
@@ -151,7 +195,7 @@ h2 {
 
 .text-button {
   padding: 4px 0;
-  border: none;
+  border: 0;
   background: transparent;
   color: #15547a;
   font-size: 12px;
@@ -168,18 +212,18 @@ h2 {
   width: 100%;
   min-height: 50px;
   padding: 12px 20px;
-  border: none;
+  border: 0;
   border-radius: 10px;
   background: #15547a;
   color: #fff;
   font-size: 15px;
   font-weight: 700;
-  box-shadow: 0 6px 16px rgba(21, 84, 122, 0.18);
+  box-shadow: 0 6px 16px rgb(21 84 122 / 18%);
   cursor: pointer;
   transition: background 0.2s, transform 0.2s;
 }
 
-.login-button:hover {
+.login-button:hover:not(:disabled) {
   background: #103f5c;
   transform: translateY(-1px);
 }
@@ -193,31 +237,105 @@ button:focus-visible {
   outline-offset: 3px;
 }
 
-/* Register block sits right under the Sign in button. */
+button:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.login-button:disabled {
+  transform: none;
+}
+
 .register {
   margin-top: 12px;
-  padding-top: 0;
-  border-top: none;
   color: #667d8c;
   text-align: center;
   font-size: 12px;
   line-height: 1.8;
 }
 
-/* Status message sits below Register and takes no space when empty. */
-#message {
-  min-height: 0;
-  margin: 10px 0 0;
-  color: #597284;
-  font-size: 12px;
-  line-height: 1.6;
-  text-align: center;
+.resend-button {
+  display: block;
+  margin: 14px auto 0;
+}
+
+/* Notification messages */
+
+.notice {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: min(410px, calc(100vw - 32px));
+  max-height: calc(100svh - 32px);
+  overflow-y: auto;
+  padding: 17px;
+  border: 1px solid;
+  border-left-width: 5px;
+  border-radius: 12px;
+  box-shadow: 0 12px 35px rgb(0 25 45 / 18%);
+}
+
+/* Green — successful */
+.notice.success {
+  background: #ecfdf3;
+  border-color: #a7d7b5;
+  color: #166534;
+}
+
+/* Red — failed */
+.notice.error {
+  background: #fff1f2;
+  border-color: #f5b3bc;
+  color: #991b1b;
+}
+
+/* Blue — processing */
+.notice.info {
+  background: #eff6ff;
+  border-color: #b6cff5;
+  color: #1e40af;
+}
+
+.notice-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.notice strong {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 14px;
+}
+
+.notice p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
   overflow-wrap: anywhere;
 }
 
-#message:empty {
-  display: none;
+#dismiss-message {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 24px;
+  cursor: pointer;
 }
+
+#dismiss-message:hover {
+  background: rgb(0 0 0 / 5%);
+}
+
+/* Responsive layout */
 
 @media (max-width: 550px) {
   body {
@@ -232,12 +350,18 @@ button:focus-visible {
     padding: 34px 26px;
   }
 
-  h2 {
+  h1 {
     font-size: 28px;
   }
 
   .description {
     margin-bottom: 24px;
+  }
+
+  .notice {
+    top: 12px;
+    right: 12px;
+    width: calc(100vw - 24px);
   }
 }
 
@@ -247,17 +371,4 @@ button:focus-visible {
   *::after {
     transition: none !important;
   }
-}
-
-[hidden] {
-  display: none !important;
-}
-
-button:disabled {
-  opacity: 0.65;
-  cursor: wait;
-}
-
-.login-button:disabled {
-  transform: none;
 }

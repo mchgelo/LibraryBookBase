@@ -4,10 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <title>Library Login</title>
+  <title>BookBase | Login</title>
 
-  <link rel="stylesheet" href="style.css">
-  <script type="module" src="script.js"></script>
+  <link rel="stylesheet" href="style.css?v=login-oop-2">
+  <script type="module" src="script.js?v=login-oop-2"></script>
 </head>
 
 <body>
@@ -15,16 +15,17 @@
     <section class="login-panel" aria-labelledby="form-title">
       <p class="subtitle">LIBRARY MANAGEMENT SYSTEM</p>
 
-      <h2 id="form-title">Welcome back</h2>
+      <h1 id="form-title">Welcome back</h1>
 
       <p class="description" id="form-description">
         Sign in to access your library account.
       </p>
 
-      <form id="login-form">
+      <form id="login-form" novalidate>
         <div id="registration-fields" hidden>
           <div class="form-group">
             <label for="full-name">Full name</label>
+
             <input
               type="text"
               id="full-name"
@@ -39,6 +40,7 @@
 
         <div class="form-group">
           <label for="username">Email address</label>
+
           <input
             type="email"
             id="username"
@@ -47,6 +49,7 @@
             autocomplete="username"
             autocapitalize="none"
             spellcheck="false"
+            maxlength="254"
             required
           >
         </div>
@@ -61,33 +64,86 @@
               name="password"
               placeholder="Enter your password"
               autocomplete="current-password"
+              maxlength="4096"
               required
             >
 
             <button
               type="button"
               id="toggle-password"
-              aria-controls="password"
+              aria-controls="password confirm-password"
               aria-pressed="false"
             >
               Show
             </button>
           </div>
+
+          <div
+            id="password-requirements"
+            class="password-requirements"
+            hidden
+          >
+            <p>Password must contain:</p>
+
+            <ul>
+              <li
+                data-rule="length"
+                data-label="8 to 16 characters"
+              >
+                <span aria-hidden="true">○</span>
+                8–16 characters
+              </li>
+
+              <li
+                data-rule="uppercase"
+                data-label="At least one uppercase letter"
+              >
+                <span aria-hidden="true">○</span>
+                One uppercase letter (A–Z)
+              </li>
+
+              <li
+                data-rule="lowercase"
+                data-label="At least one lowercase letter"
+              >
+                <span aria-hidden="true">○</span>
+                One lowercase letter (a–z)
+              </li>
+
+              <li
+                data-rule="number"
+                data-label="At least one number"
+              >
+                <span aria-hidden="true">○</span>
+                One number (0–9)
+              </li>
+
+              <li
+                data-rule="special"
+                data-label="At least one special character"
+              >
+                <span aria-hidden="true">○</span>
+                One special character, such as ! @ # $
+              </li>
+            </ul>
+          </div>
         </div>
 
         <div class="form-group" id="confirm-field" hidden>
           <label for="confirm-password">Confirm password</label>
+
           <input
             type="password"
             id="confirm-password"
             name="confirmPassword"
             placeholder="Re-enter your password"
             autocomplete="new-password"
+            maxlength="16"
             disabled
           >
         </div>
 
-        <div class="options">
+        <div class="options" id="login-options">
           <label class="remember">
             <input type="checkbox" name="remember">
             Remember me
@@ -102,7 +158,11 @@
           </button>
         </div>
 
-        <button type="submit" class="login-button" id="submit-button">
+        <button
+          type="submit"
+          class="login-button"
+          id="submit-button"
+        >
           Sign in →
         </button>
 
@@ -118,16 +178,9 @@
           </button>
         </div>
 
-        <p
-          id="message"
-          role="status"
-          aria-live="polite"
-          aria-atomic="true"
-        ></p>
-
         <button
           type="button"
-          class="text-button"
+          class="text-button resend-button"
           id="resend-verification"
           hidden
         >
@@ -136,5 +189,28 @@
       </form>
     </section>
   </main>
+
+  <!-- Success, error, and processing notifications -->
+  <div
+    id="message"
+    class="notice"
+    role="status"
+    aria-live="polite"
+    aria-atomic="true"
+    hidden
+  >
+    <div class="notice-content">
+      <strong id="message-title"></strong>
+      <p id="message-text"></p>
+    </div>
+
+    <button
+      type="button"
+      id="dismiss-message"
+      aria-label="Dismiss notification"
+    >
+      ×
+    </button>
+  </div>
 </body>
 </html>

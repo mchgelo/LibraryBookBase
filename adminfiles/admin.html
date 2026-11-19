@@ -6,8 +6,8 @@
 
   <title>BookBase | Admin</title>
 
-  <link rel="stylesheet" href="./admin.css?v=borrower-2">
-  <script type="module" src="./admin.js?v=borrower-2"></script>
+  <link rel="stylesheet" href="./admin.css?v=admin-organized-4">
+  <script type="module" src="./admin.js?v=admin-organized-4"></script>
 </head>
 
 <body>
@@ -54,6 +54,43 @@
     <symbol id="i-chevron" viewBox="0 0 24 24">
       <path d="m7 10 5 5 5-5"/>
     </symbol>
+
+    <symbol id="i-user" viewBox="0 0 24 24">
+      <circle cx="12" cy="8" r="4"/>
+      <path d="M4 21v-2a8 8 0 0 1 16 0v2"/>
+    </symbol>
+
+    <symbol id="i-mail" viewBox="0 0 24 24">
+      <rect x="3" y="5" width="18" height="14" rx="2"/>
+      <path d="m3 6 9 7 9-7"/>
+    </symbol>
+
+    <symbol id="i-shield" viewBox="0 0 24 24">
+      <path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6Z"/>
+    </symbol>
+
+    <symbol id="i-check" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="9"/>
+      <path d="m8 12 3 3 5-6"/>
+    </symbol>
+
+    <symbol id="i-key" viewBox="0 0 24 24">
+      <circle cx="8" cy="8" r="5"/>
+      <path d="m12 12 9 9M17 17l3-3M14 14l3-3"/>
+    </symbol>
+
+    <symbol id="i-edit" viewBox="0 0 24 24">
+      <path d="m16 3 5 5-12 12-6 1 1-6Zm-2 2 5 5"/>
+    </symbol>
+
+    <symbol id="i-save" viewBox="0 0 24 24">
+      <path d="M4 3h13l4 4v14H3V3ZM7 3v6h10V3M7 21v-8h10v8"/>
+    </symbol>
+
+    <symbol id="i-search" viewBox="0 0 24 24">
+      <circle cx="10.5" cy="10.5" r="6.5"/>
+      <path d="m16 16 5 5"/>
+    </symbol>
   </svg>
 
   <p id="loading" class="loading" role="status" hidden></p>
@@ -61,12 +98,7 @@
   <div id="app" hidden>
     <div id="shade" class="shade" hidden></div>
 
-    <!-- Sidebar -->
-    <aside
-      class="sidebar"
-      id="sidebar"
-      aria-label="Admin navigation"
-    >
+    <aside class="sidebar" id="sidebar" aria-label="Admin navigation">
       <div class="brand">
         <span class="brand-logo">
           <svg class="icon" aria-hidden="true">
@@ -91,33 +123,21 @@
           Borrow Requests
         </button>
 
-        <button
-          type="button"
-          class="nav-button"
-          data-view="approved"
-        >
+        <button type="button" class="nav-button" data-view="approved">
           <svg class="icon" aria-hidden="true">
             <use href="#i-book"/>
           </svg>
           Borrowed Books
         </button>
 
-        <button
-          type="button"
-          class="nav-button"
-          data-view="history"
-        >
+        <button type="button" class="nav-button" data-view="history">
           <svg class="icon" aria-hidden="true">
             <use href="#i-history"/>
           </svg>
           Borrowing History
         </button>
 
-        <button
-          type="button"
-          class="nav-button"
-          data-view="books"
-        >
+        <button type="button" class="nav-button" data-view="books">
           <svg class="icon" aria-hidden="true">
             <use href="#i-grid"/>
           </svg>
@@ -143,7 +163,6 @@
     </aside>
 
     <div class="workspace">
-      <!-- Top navigation -->
       <header class="topbar">
         <button
           type="button"
@@ -159,9 +178,7 @@
         </button>
 
         <div class="topbar-context">
-          <span class="topbar-label">
-            Library Management System
-          </span>
+          <span class="topbar-label">Library Management System</span>
 
           <time
             id="dashboard-clock"
@@ -174,7 +191,6 @@
         </div>
 
         <div class="top-actions">
-          <!-- Notifications -->
           <div class="action-wrap">
             <button
               type="button"
@@ -189,22 +205,13 @@
               </svg>
             </button>
 
-            <div
-              class="dropdown"
-              id="notifications"
-              hidden
-            >
+            <div class="dropdown" id="notifications" hidden>
               <h3>Borrowing updates</h3>
-
-              <p id="admin-notification-text">
-                Loading requests...
-              </p>
-
+              <p id="admin-notification-text">Loading requests...</p>
               <div id="admin-notification-list"></div>
             </div>
           </div>
 
-          <!-- Admin profile -->
           <div class="action-wrap">
             <button
               type="button"
@@ -214,21 +221,14 @@
               aria-controls="profile"
               aria-expanded="false"
             >
-              <span
-                class="avatar"
-                id="avatar"
-                aria-hidden="true"
-              >A</span>
+              <span class="avatar" id="avatar" aria-hidden="true">A</span>
 
               <span class="user-summary">
                 <strong id="admin-name">Admin</strong>
                 <small>Admin / Librarian</small>
               </span>
 
-              <svg
-                class="icon profile-arrow"
-                aria-hidden="true"
-              >
+              <svg class="icon profile-arrow" aria-hidden="true">
                 <use href="#i-chevron"/>
               </svg>
             </button>
@@ -244,29 +244,43 @@
               <p id="profile-email"></p>
               <p id="profile-role">Admin / Librarian</p>
 
-              <button type="button" data-profile-details>
-                Profile details
+              <button type="button" class="profile-action" data-profile-details>
+                <svg class="icon" aria-hidden="true">
+                  <use href="#i-user"/>
+                </svg>
+                <span>Profile details</span>
               </button>
 
-              <button type="button" data-logout>
-                Logout
+              <button type="button" class="profile-action" data-profile-edit>
+                <svg class="icon" aria-hidden="true">
+                  <use href="#i-edit"/>
+                </svg>
+                <span>Edit profile</span>
+              </button>
+
+              <button
+                type="button"
+                class="profile-action profile-logout"
+                data-logout
+              >
+                <svg class="icon" aria-hidden="true">
+                  <use href="#i-logout"/>
+                </svg>
+                <span>Logout</span>
               </button>
             </div>
           </div>
         </div>
       </header>
 
-      <!-- Dashboard content -->
       <main>
         <p class="eyebrow">ADMIN DASHBOARD</p>
-
         <h1 id="page-title">Borrow requests</h1>
 
         <p id="page-description">
           Review requests before issuing a book.
         </p>
 
-        <!-- Dashboard counts -->
         <div class="stats">
           <article>
             <span>Pending requests</span>
@@ -289,25 +303,67 @@
           </article>
         </div>
 
-        <p
-          id="status"
-          role="status"
-          aria-live="polite"
-        ></p>
+        <!-- Search and filters -->
+        <div class="workspace-tools">
+          <label class="admin-search">
+            <svg class="icon" aria-hidden="true">
+              <use href="#i-search"/>
+            </svg>
 
-        <!-- Requests, borrowed books, and history -->
+            <input
+              type="search"
+              id="admin-search"
+              aria-label="Search books or transactions"
+              placeholder="Search borrower, Student ID, email or book..."
+            >
+          </label>
+
+          <div id="transaction-tools" class="filter-options">
+            <label>
+              Transactions order
+              <select id="transaction-sort">
+                <option value="name-asc">Borrower name: A–Z</option>
+                <option value="name-desc">Borrower name: Z–A</option>
+                <option value="newest">Latest activity first</option>
+                <option value="oldest">Oldest activity first</option>
+              </select>
+            </label>
+          </div>
+
+          <div id="book-tools" class="filter-options" hidden>
+            <label>
+              Category
+              <select id="book-category-filter">
+                <option value="all">All categories</option>
+              </select>
+            </label>
+
+            <label>
+              Books order
+              <select id="book-sort">
+                <option value="title-asc">Book title: A–Z</option>
+                <option value="title-desc">Book title: Z–A</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <p id="results-summary" class="results-summary" role="status"></p>
+        <datalist id="category-suggestions"></datalist>
+
+        <p id="status" role="status" aria-live="polite"></p>
+
         <section id="requests-panel" class="panel">
           <div id="request-list" class="record-list"></div>
         </section>
 
-        <!-- Manage Books -->
         <section id="books-panel" hidden>
           <form id="book-form" class="panel">
             <h2>Add a book</h2>
 
             <p class="hint">
-              Book ID must be unique.
-              Use letters, numbers, or hyphens.
+              Book ID must be unique. Use letters, numbers, or hyphens.
+              A readable cover color is assigned automatically when saved.
             </p>
 
             <div class="form-grid">
@@ -315,7 +371,7 @@
                 Book ID
                 <input
                   id="book-id"
-                  pattern="[a-zA-Z0-9-]+"
+                  pattern="[a-zA-Z0-9\-]+"
                   placeholder="example: science-101"
                   maxlength="100"
                   required
@@ -324,26 +380,19 @@
 
               <label>
                 Title
-                <input
-                  id="book-title"
-                  maxlength="200"
-                  required
-                >
+                <input id="book-title" maxlength="200" required>
               </label>
 
               <label>
                 Author
-                <input
-                  id="book-author"
-                  maxlength="150"
-                  required
-                >
+                <input id="book-author" maxlength="150" required>
               </label>
 
               <label>
                 Category
                 <input
                   id="book-category"
+                  list="category-suggestions"
                   maxlength="100"
                   required
                 >
@@ -362,18 +411,13 @@
               </label>
             </div>
 
-            <button
-              type="submit"
-              id="save-book"
-              class="primary"
-            >
+            <button type="submit" id="save-book" class="primary">
               Add Book
             </button>
           </form>
 
           <section class="panel catalogue-panel">
             <h2>Library catalogue</h2>
-
             <div id="book-list" class="record-list"></div>
           </section>
         </section>

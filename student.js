@@ -22,7 +22,11 @@ import {
 } from
   "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
 
-// Firebase
+
+// =====================================================
+// FIREBASE
+// =====================================================
+
 const app = initializeApp({
   apiKey: "AIzaSyAI-ZTiaClMvISqvG5KIJW8rA_YQ0rukbw",
   authDomain: "library-db9da.firebaseapp.com",
@@ -36,7 +40,504 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const $ = (id) => document.getElementById(id);
 
-// Catalogue display examples
+
+// =====================================================
+// OOP: ABSTRACT RECORD
+// Shared identity for books and student profile records.
+// =====================================================
+
+export class LibraryRecord {
+  #id;
+
+  constructor(id) {
+    if (new.target === LibraryRecord) {
+      throw new Error("LibraryRecord is abstract.");
+    }
+
+    if (
+      typeof id !== "string" ||
+      !id ||
+      id.includes("/")
+    ) {
+      throw new Error("Invalid record ID.");
+    }
+
+    this.#id = id;
+  }
+
+  getId() {
+    return this.#id;
+  }
+
+  get id() {
+    return this.#id;
+  }
+
+  getSummary() {
+    throw new Error(
+      "Implement getSummary() in the child class."
+    );
+  }
+}
+
+
+// =====================================================
+// OOP: BOOK
+// Private record data with read-only public getters.
+// =====================================================
+
+export class Book extends LibraryRecord {
+  #data;
+  #registered;
+
+  constructor(id, data, registered = false) {
+    super(id);
+
+    this.#data = { ...data };
+    this.#registered = registered;
+  }
+
+  get title() {
+    return this.#data.title || this.id;
+  }
+
+  get author() {
+    return this.#data.author || "Unknown author";
+  }
+
+  get category() {
+    return this.#data.category || "General";
+  }
+
+  get color() {
+    return this.#data.color || "#738baa";
+  }
+
+  get ink() {
+    return this.#data.ink || "#ffffff";
+  }
+
+  get availableCopies() {
+    return this.#registered
+      ? this.#data.availableCopies
+      : undefined;
+  }
+
+  isAvailable() {
+    return Number.isSafeInteger(this.availableCopies) &&
+      this.availableCopies > 0;
+  }
+
+  getSummary() {
+    return {
+      title: this.title,
+      subtitle: this.author
+    };
+  }
+
+  matchesSearch(searchText) {
+    const searchable = CatalogueService.normalize(
+      `${this.id} ${this.title} ${this.author} ${this.category}`
+    );
+
+    const terms = CatalogueService
+      .normalize(searchText)
+      .split(/\s+/)
+      .filter(Boolean);
+
+    return terms.every((term) => searchable.includes(term));
+  }
+
+  matchesCategory(category) {
+    return category === "All" ||
+      CatalogueService.normalize(this.category) ===
+        CatalogueService.normalize(category);
+  }
+}
+
+
+// =====================================================
+// OOP: STUDENT PROFILE
+// One data source for header, dropdown, details, Settings.
+// =====================================================
+
+export class StudentProfile extends LibraryRecord {
+  #user;
+  #data;
+
+  constructor(user, data = {}) {
+    super(user.uid);
+
+    this.#user = {
+      displayName: user.displayName,
+      email: user.email,
+      emailVerified: user.emailVerified
+    };
+
+    this.#data = { ...data };
+  }
+
+  get fullName() {
+    const savedName =
+      typeof this.#data.fullName === "string"
+        ? this.#data.fullName.trim()
+        : "";
+
+    return savedName ||
+      this.#user.displayName ||
+      this.email ||
+      "Student";
+  }
+
+  get studentId() {
+    return this.#data.studentId || "";
+  }
+
+  get course() {
+    return this.#data.course || "";
+  }
+
+  get email() {
+    return this.#user.email || "";
+  }
+
+  get emailVerified() {
+    return this.#user.emailVerified === true;
+  }
+
+  getSummary() {
+    return {
+      title: this.fullName,
+      subtitle: this.email
+    };
+  }
+
+  isComplete() {
+    return ["fullName", "studentId", "course"].every(
+      (key) =>
+        typeof this.#data[key] === "string" &&
+        this.#data[key].trim()
+    );
+  }
+
+  toData() {
+    return {
+      fullName: this.fullName,
+      studentId: this.studentId,
+      course: this.course,
+      email: this.email
+    };
+  }
+
+  static validate(fullName, studentId, course) {
+    const missing = [fullName, studentId, course].some(
+      (value) =>
+        typeof value !== "string" ||
+        !value.trim()
+    );
+
+    if (
+      missing ||
+      fullName.trim().length > 100 ||
+      studentId.trim().length > 40 ||
+      course.trim().length > 100
+    ) {
+      throw new Error(
+        "Enter your full name, Student ID, and course within the allowed lengths."
+      );
+    }
+  }
+}
+
+
+// =====================================================
+// OOP: CATALOGUE SERVICE
+// =====================================================
+
+export class CatalogueService {
+  static normalize(value) {
+    return String(value ?? "")
+      .normalize("NFD")
+      .replace(/\p{M}/gu, "")
+      .toLowerCase()
+      .trim();
+  }
+
+  getBooks(samples, inventory) {
+    const merged = new Map(
+      samples.map((book) => [book.id, { ...book }])
+    );
+
+    inventory.forEach((data, id) => {
+      const previous = merged.get(id);
+
+      merged.set(id, {
+        ...previous,
+        ...data,
+        id,
+        title: data.title || previous?.title || id,
+        author: data.author || previous?.author || "Unknown author",
+        category: data.category || previous?.category || "General"
+      });
+    });
+
+    return [...merged].map(
+      ([id, data]) =>
+        new Book(id, data, inventory.has(id))
+    );
+  }
+}
+
+
+// =====================================================
+// OOP: PROFILE SERVICE
+// Firebase profile implementation stays inside this class.
+// =====================================================
+
+export class StudentProfileService {
+  #db;
+  #auth;
+
+  constructor(db, auth) {
+    this.#db = db;
+    this.#auth = auth;
+  }
+
+  #assertSession(user) {
+    if (
+      !user?.emailVerified ||
+      this.#auth.currentUser?.uid !== user.uid
+    ) {
+      throw new Error(
+        "Your session changed. Sign in again."
+      );
+    }
+  }
+
+  listen(user, onProfile, onError) {
+    this.#assertSession(user);
+
+    return onSnapshot(
+      doc(this.#db, "users", user.uid),
+      (snapshot) => {
+        onProfile(
+          new StudentProfile(
+            user,
+            snapshot.exists() ? snapshot.data() : {}
+          )
+        );
+      },
+      onError
+    );
+  }
+
+  async save(user, fullName, studentId, course) {
+    this.#assertSession(user);
+
+    StudentProfile.validate(
+      fullName,
+      studentId,
+      course
+    );
+
+    const data = {
+      fullName: fullName.trim(),
+      studentId: studentId.trim(),
+      course: course.trim(),
+      email: user.email
+    };
+
+    await setDoc(
+      doc(this.#db, "users", user.uid),
+      {
+        ...data,
+        updatedAt: serverTimestamp()
+      }
+    );
+
+    this.#assertSession(user);
+
+    return new StudentProfile(user, data);
+  }
+}
+
+
+// =====================================================
+// OOP: BORROWING SERVICE
+// Requests and cancellations use atomic transactions.
+// =====================================================
+
+export class BorrowingService {
+  #db;
+  #auth;
+
+  constructor(db, auth) {
+    this.#db = db;
+    this.#auth = auth;
+  }
+
+  #assertSession(user) {
+    if (
+      !user?.emailVerified ||
+      this.#auth.currentUser?.uid !== user.uid
+    ) {
+      throw new Error(
+        "Your session changed. Sign in again."
+      );
+    }
+  }
+
+  async requestBook(user, profile, bookId) {
+    this.#assertSession(user);
+
+    if (
+      !(profile instanceof StudentProfile) ||
+      profile.id !== user.uid ||
+      !profile.isComplete()
+    ) {
+      throw new Error(
+        "Save your full name, Student ID, and course in Settings first."
+      );
+    }
+
+    const requestRef = doc(
+      collection(this.#db, "borrowRequests")
+    );
+
+    const lockRef = doc(
+      this.#db,
+      "borrowLocks",
+      `${user.uid}_${bookId}`
+    );
+
+    await runTransaction(this.#db, async (transaction) => {
+      this.#assertSession(user);
+
+      const snapshot = await transaction.get(
+        doc(this.#db, "books", bookId)
+      );
+
+      const lock = await transaction.get(lockRef);
+
+      const book = snapshot.exists()
+        ? new Book(bookId, snapshot.data(), true)
+        : null;
+
+      if (!book?.isAvailable()) {
+        throw new Error(
+          "Book not available. Please select another book."
+        );
+      }
+
+      if (lock.exists()) {
+        throw new Error(
+          "You already have an active request for this book."
+        );
+      }
+
+      transaction.set(requestRef, {
+        studentUid: user.uid,
+        bookId,
+        status: "pending",
+        requestedAt: serverTimestamp()
+      });
+
+      transaction.set(lockRef, {
+        studentUid: user.uid,
+        bookId,
+        requestId: requestRef.id
+      });
+
+      // No inventory decrement while pending.
+    });
+
+    return requestRef.id;
+  }
+
+  async cancelRequest(user, requestId) {
+    this.#assertSession(user);
+
+    await runTransaction(this.#db, async (transaction) => {
+      this.#assertSession(user);
+
+      const requestRef = doc(
+        this.#db,
+        "borrowRequests",
+        requestId
+      );
+
+      const snapshot = await transaction.get(requestRef);
+
+      if (!snapshot.exists()) {
+        throw new Error(
+          "This request no longer exists."
+        );
+      }
+
+      const data = snapshot.data();
+
+      if (data.studentUid !== user.uid) {
+        throw new Error(
+          "You can only cancel your own request."
+        );
+      }
+
+      if (data.status !== "pending") {
+        throw new Error(
+          "This request is no longer pending. Approved books must be returned through the librarian."
+        );
+      }
+
+      const lockRef = doc(
+        this.#db,
+        "borrowLocks",
+        `${user.uid}_${data.bookId}`
+      );
+
+      const lock = await transaction.get(lockRef);
+
+      if (
+        !lock.exists() ||
+        lock.data().requestId !== requestId
+      ) {
+        throw new Error(
+          "The active request record needs checking. Contact the librarian."
+        );
+      }
+
+      transaction.update(requestRef, {
+        status: "cancelled",
+        cancelledAt: serverTimestamp()
+      });
+
+      transaction.delete(lockRef);
+    });
+  }
+}
+
+
+// =====================================================
+// SERVICE OBJECTS
+// =====================================================
+
+const catalogueService = new CatalogueService();
+const profileService = new StudentProfileService(db, auth);
+const borrowingService = new BorrowingService(db, auth);
+
+let profileModel = null;
+
+// Polymorphism: accepts Book or StudentProfile records.
+function recordHeading(record, tag = "h3") {
+  const summary = record.getSummary();
+  return element(tag, "", summary.title);
+}
+
+
+// =====================================================
+// CATALOGUE EXAMPLES
+// Actual borrowing inventory still comes from Firestore.
+// =====================================================
+
 const sampleBooks = [
   ["money", "The Psychology of Money", "Morgan Housel", "Finance", "#789483", "#ffffff"],
   ["innovation", "How Innovation Works", "Matt Ridley", "Science", "#f5d52c", "#263b42"],
@@ -47,7 +548,12 @@ const sampleBooks = [
   ["deep", "Deep Work", "Cal Newport", "Self-development", "#cc6c53", "#fff7ed"],
   ["little", "The Little Prince", "Antoine de Saint-Exupéry", "Fiction", "#9fbfc9", "#203c50"]
 ].map(([id, title, author, category, color, ink]) => ({
-  id, title, author, category, color, ink
+  id,
+  title,
+  author,
+  category,
+  color,
+  ink
 }));
 
 const views = {
@@ -88,7 +594,11 @@ const views = {
   ]
 };
 
-// State
+
+// =====================================================
+// STATE
+// =====================================================
+
 let currentUser = null;
 let currentView = "discover";
 let selectedCategory = "All";
@@ -121,7 +631,11 @@ let overdueSignature = "";
 const sending = new Set();
 const cancelling = new Set();
 
-// Helpers
+
+// =====================================================
+// HELPERS
+// =====================================================
+
 function element(tag, className = "", text) {
   const item = document.createElement(tag);
   item.className = className;
@@ -135,8 +649,16 @@ function element(tag, className = "", text) {
 
 function createIcon(name) {
   const namespace = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(namespace, "svg");
-  const use = document.createElementNS(namespace, "use");
+
+  const svg = document.createElementNS(
+    namespace,
+    "svg"
+  );
+
+  const use = document.createElementNS(
+    namespace,
+    "use"
+  );
 
   svg.classList.add("icon");
   svg.setAttribute("aria-hidden", "true");
@@ -147,34 +669,22 @@ function createIcon(name) {
 }
 
 function catalogueBooks() {
-  const result = new Map(
-    sampleBooks.map((book) => [book.id, { ...book }])
+  return catalogueService.getBooks(
+    sampleBooks,
+    liveBooks
   );
-
-  liveBooks.forEach((data, id) => {
-    const previous = result.get(id);
-
-    result.set(id, {
-      color: "#738baa",
-      ink: "#ffffff",
-      ...previous,
-      ...data,
-      id,
-      title: data.title || previous?.title || id,
-      author: data.author || previous?.author || "Unknown author",
-      category: data.category || previous?.category || "General"
-    });
-  });
-
-  return [...result.values()];
 }
 
 function bookTitle(id) {
-  return catalogueBooks().find((book) => book.id === id)?.title || id;
+  return catalogueBooks().find(
+    (book) => book.id === id
+  )?.title || id;
 }
 
 function formatDate(value, includeTime = true) {
-  if (!value?.toDate) return "Awaiting server timestamp";
+  if (!value?.toDate) {
+    return "Awaiting server timestamp";
+  }
 
   const options = {
     dateStyle: "medium",
@@ -186,23 +696,22 @@ function formatDate(value, includeTime = true) {
     options.hour12 = true;
   }
 
-  return new Intl.DateTimeFormat("en-PH", options)
-    .format(value.toDate()) + (includeTime ? " PHT" : "");
+  return new Intl.DateTimeFormat(
+    "en-PH",
+    options
+  ).format(value.toDate()) +
+    (includeTime ? " PHT" : "");
 }
 
 function studentName(user = currentUser) {
-  return studentProfile.fullName ||
+  return profileModel?.fullName ||
     user?.displayName ||
     user?.email ||
     "Student";
 }
 
 function profileComplete() {
-  return ["fullName", "studentId", "course"].every(
-    (key) =>
-      typeof studentProfile[key] === "string" &&
-      studentProfile[key].trim()
-  );
+  return Boolean(profileModel?.isComplete());
 }
 
 function isOverdue(request, now = Date.now()) {
@@ -214,21 +723,36 @@ function isOverdue(request, now = Date.now()) {
 }
 
 function closeDropdowns() {
-  document.querySelectorAll("[data-dropdown]").forEach((button) => {
-    const panel = $(button.dataset.dropdown);
-    if (panel) panel.hidden = true;
+  document.querySelectorAll("[data-dropdown]")
+    .forEach((button) => {
+      const panel = $(button.dataset.dropdown);
 
-    button.setAttribute("aria-expanded", "false");
-  });
+      if (panel) {
+        panel.hidden = true;
+      }
+
+      button.setAttribute(
+        "aria-expanded",
+        "false"
+      );
+    });
 }
 
 function closeSidebar() {
   $("sidebar").classList.remove("open");
   $("shade").hidden = true;
-  $("menu-button").setAttribute("aria-expanded", "false");
+
+  $("menu-button").setAttribute(
+    "aria-expanded",
+    "false"
+  );
 }
 
-// Notifications
+
+// =====================================================
+// SUCCESS / ERROR NOTIFICATIONS
+// =====================================================
+
 function studentMessage(text, error = false, kind = "success") {
   clearTimeout(toastTimer);
   $("student-toast")?.remove();
@@ -254,14 +778,31 @@ function studentMessage(text, error = false, kind = "success") {
     info: "i"
   };
 
-  const toast = element("div", `student-toast ${type}`);
+  const toast = element(
+    "div",
+    `student-toast ${type}`
+  );
+
   toast.id = "student-toast";
 
-  const icon = element("span", "student-toast-icon", symbols[type]);
+  const icon = element(
+    "span",
+    "student-toast-icon",
+    symbols[type]
+  );
+
   icon.setAttribute("aria-hidden", "true");
 
-  const content = element("div", "student-toast-content");
-  content.setAttribute("role", error ? "alert" : "status");
+  const content = element(
+    "div",
+    "student-toast-content"
+  );
+
+  content.setAttribute(
+    "role",
+    error ? "alert" : "status"
+  );
+
   content.setAttribute("aria-atomic", "true");
 
   content.append(
@@ -269,9 +810,18 @@ function studentMessage(text, error = false, kind = "success") {
     element("p", "", text)
   );
 
-  const close = element("button", "student-toast-close", "×");
+  const close = element(
+    "button",
+    "student-toast-close",
+    "×"
+  );
+
   close.type = "button";
-  close.setAttribute("aria-label", "Dismiss notification");
+
+  close.setAttribute(
+    "aria-label",
+    "Dismiss notification"
+  );
 
   close.addEventListener("click", () => {
     clearTimeout(toastTimer);
@@ -283,6 +833,7 @@ function studentMessage(text, error = false, kind = "success") {
 
   function dismissLater() {
     clearTimeout(toastTimer);
+
     if (type !== "success") return;
 
     toastTimer = setTimeout(() => {
@@ -303,13 +854,24 @@ function studentMessage(text, error = false, kind = "success") {
     clearTimeout(toastTimer);
   });
 
-  toast.addEventListener("pointerleave", dismissLater);
-  toast.addEventListener("focusout", dismissLater);
+  toast.addEventListener(
+    "pointerleave",
+    dismissLater
+  );
+
+  toast.addEventListener(
+    "focusout",
+    dismissLater
+  );
 
   dismissLater();
 }
 
-// Confirmation dialog
+
+// =====================================================
+// CONFIRMATION DIALOG
+// =====================================================
+
 function confirmAction(
   title,
   description,
@@ -317,14 +879,24 @@ function confirmAction(
   book = null,
   danger = false
 ) {
-  if (activeDialog?.open) return Promise.resolve(false);
+  if (activeDialog?.open) {
+    return Promise.resolve(false);
+  }
 
   closeDropdowns();
 
-  const dialog = element("dialog", "student-dialog");
+  const dialog = element(
+    "dialog",
+    "student-dialog"
+  );
+
   activeDialog = dialog;
 
-  dialog.setAttribute("aria-labelledby", "student-confirm-title");
+  dialog.setAttribute(
+    "aria-labelledby",
+    "student-confirm-title"
+  );
+
   dialog.setAttribute(
     "aria-describedby",
     "student-confirm-description"
@@ -338,7 +910,10 @@ function confirmAction(
   form.append(heading);
 
   if (book) {
-    const summary = element("div", "borrow-confirm-summary");
+    const summary = element(
+      "div",
+      "borrow-confirm-summary"
+    );
 
     summary.append(
       element("strong", "", book.title),
@@ -348,10 +923,18 @@ function confirmAction(
     form.append(summary);
   }
 
-  const explanation = element("p", "", description);
+  const explanation = element(
+    "p",
+    "",
+    description
+  );
+
   explanation.id = "student-confirm-description";
 
-  const actions = element("div", "student-dialog-actions");
+  const actions = element(
+    "div",
+    "student-dialog-actions"
+  );
 
   const cancel = element(
     "button",
@@ -365,7 +948,9 @@ function confirmAction(
 
   const yes = element(
     "button",
-    danger ? "student-confirm-logout" : "student-confirm-borrow",
+    danger
+      ? "student-confirm-logout"
+      : "student-confirm-borrow",
     yesLabel
   );
 
@@ -377,24 +962,33 @@ function confirmAction(
   dialog.append(form);
 
   return new Promise((resolve) => {
-    dialog.addEventListener("close", () => {
-      const confirmed = dialog.returnValue === "confirm";
+    dialog.addEventListener(
+      "close",
+      () => {
+        const confirmed =
+          dialog.returnValue === "confirm";
 
-      dialog.remove();
+        dialog.remove();
 
-      if (activeDialog === dialog) {
-        activeDialog = null;
-      }
+        if (activeDialog === dialog) {
+          activeDialog = null;
+        }
 
-      resolve(confirmed);
-    }, { once: true });
+        resolve(confirmed);
+      },
+      { once: true }
+    );
 
     document.body.append(dialog);
     dialog.showModal();
   });
 }
 
-// Profile display
+
+// =====================================================
+// PROFILE DISPLAY
+// =====================================================
+
 function paintAvatar(target, user) {
   if (!target) return;
 
@@ -410,17 +1004,23 @@ function paintAvatar(target, user) {
 
   try {
     const url = new URL(user.photoURL);
+
     if (url.protocol !== "https:") return;
 
     const image = element("img");
+
     image.src = url.href;
     image.alt = "";
     image.referrerPolicy = "no-referrer";
-    image.addEventListener("error", () => image.remove());
+
+    image.addEventListener(
+      "error",
+      () => image.remove()
+    );
 
     target.append(image);
   } catch {
-    // Keep initials.
+    // Keep initials if a photo is unavailable.
   }
 }
 
@@ -436,67 +1036,202 @@ function fillProfile(user) {
   let avatar = $("student-profile-avatar");
 
   if (!avatar) {
-    avatar = element("span", "avatar student-profile-avatar");
+    avatar = element(
+      "span",
+      "avatar student-profile-avatar"
+    );
+
     avatar.id = "student-profile-avatar";
     avatar.setAttribute("aria-hidden", "true");
     $("profile").prepend(avatar);
   }
 
   paintAvatar(avatar, user);
+
+  $("dropdown-student-id").textContent =
+    profileModel?.studentId || "Not provided";
+
+  $("profile-course-text").textContent =
+    profileModel?.course || "Not provided";
+
+  updateProfileDialog();
 }
 
-function profileLines() {
+function profileFields() {
+  const profile = profileModel ||
+    new StudentProfile(currentUser);
+
   return [
-    `Name: ${studentName()}`,
-    `Student ID: ${studentProfile.studentId || "Not provided"}`,
-    `Course / Program: ${studentProfile.course || "Not provided"}`,
-    `Email: ${currentUser.email || "Not provided"}`,
-    "Account type: Student",
-    "Email status: Verified",
-    `User ID: ${currentUser.uid}`
+    ["user", "Full name", profile.fullName],
+    ["id", "Student ID", profile.studentId || "Not provided"],
+    ["graduation", "Course / Program", profile.course || "Not provided"],
+    ["mail", "Email address", profile.email || "Not provided"],
+    ["shield", "Account type", "Student"],
+    ["check", "Email status", profile.emailVerified ? "Verified" : "Not verified"],
+    ["key", "User ID", profile.id]
   ];
 }
 
+function updateProfileDialog() {
+  const container = $("profile-dialog-fields");
+
+  if (!container || !currentUser) return;
+
+  container.replaceChildren();
+
+  profileFields().forEach(([icon, label, value]) => {
+    const row = element(
+      "div",
+      "profile-detail-row"
+    );
+
+    const text = element("div");
+
+    text.append(
+      element("dt", "", label),
+      element("dd", "", value)
+    );
+
+    row.append(
+      createIcon(icon),
+      text
+    );
+
+    container.append(row);
+  });
+
+  const name = $("profile-dialog-name");
+
+  if (name) {
+    name.textContent = studentName();
+  }
+
+  paintAvatar(
+    $("profile-dialog-avatar"),
+    currentUser
+  );
+}
+
 function showProfile() {
-  if (!currentUser || activeDialog?.open) return;
+  if (
+    !currentUser ||
+    activeDialog?.open
+  ) {
+    return;
+  }
 
   closeDropdowns();
 
-  const dialog = element("dialog", "student-dialog");
+  const dialog = element(
+    "dialog",
+    "student-dialog profile-dialog"
+  );
+
   activeDialog = dialog;
 
-  const heading = element("h2", "", "Profile details");
+  const heading = element(
+    "h2",
+    "",
+    "Profile details"
+  );
+
   heading.id = "student-profile-title";
 
-  dialog.setAttribute("aria-labelledby", heading.id);
-  dialog.append(heading);
+  dialog.setAttribute(
+    "aria-labelledby",
+    heading.id
+  );
 
-  profileLines().forEach((line) => {
-    dialog.append(element("p", "", line));
+  const identity = element(
+    "div",
+    "profile-dialog-identity"
+  );
+
+  const avatar = element("span", "avatar");
+  avatar.id = "profile-dialog-avatar";
+
+  paintAvatar(avatar, currentUser);
+
+  const name = recordHeading(
+    profileModel || new StudentProfile(currentUser)
+  );
+
+  name.id = "profile-dialog-name";
+  identity.append(avatar, name);
+
+  const details = element(
+    "dl",
+    "profile-detail-list"
+  );
+
+  details.id = "profile-dialog-fields";
+
+  const actions = element(
+    "div",
+    "student-dialog-actions"
+  );
+
+  const edit = element(
+    "button",
+    "student-confirm-borrow"
+  );
+
+  edit.type = "button";
+
+  edit.append(
+    createIcon("edit"),
+    element("span", "", "Edit profile")
+  );
+
+  edit.addEventListener("click", () => {
+    dialog.close();
+    setView("settings");
+    $("profile-full-name")?.focus();
   });
 
-  const form = element("form");
-  form.method = "dialog";
+  const close = element(
+    "button",
+    "student-stay",
+    "Close"
+  );
 
-  const actions = element("div", "student-dialog-actions");
-  const close = element("button", "student-stay", "Close");
+  close.type = "button";
   close.autofocus = true;
 
-  actions.append(close);
-  form.append(actions);
-  dialog.append(form);
+  close.addEventListener(
+    "click",
+    () => dialog.close()
+  );
 
-  dialog.addEventListener("close", () => {
-    dialog.remove();
-    if (activeDialog === dialog) activeDialog = null;
-  }, { once: true });
+  actions.append(close, edit);
+
+  dialog.append(
+    heading,
+    identity,
+    details,
+    actions
+  );
+
+  dialog.addEventListener(
+    "close",
+    () => {
+      dialog.remove();
+
+      if (activeDialog === dialog) {
+        activeDialog = null;
+      }
+    },
+    { once: true }
+  );
 
   document.body.append(dialog);
+  updateProfileDialog();
   dialog.showModal();
 }
 
 function updateProfileNotice() {
   const notice = $("profile-notice");
+
   notice.replaceChildren();
 
   notice.hidden =
@@ -505,12 +1240,14 @@ function updateProfileNotice() {
 
   if (notice.hidden) return;
 
-  notice.append(element(
-    "span",
-    "",
-    profileError ||
-      "Complete your Student ID and course before requesting a book."
-  ));
+  notice.append(
+    element(
+      "span",
+      "",
+      profileError ||
+        "Complete your Student ID and course before requesting a book."
+    )
+  );
 
   const button = element(
     "button",
@@ -523,25 +1260,35 @@ function updateProfileNotice() {
   notice.append(button);
 }
 
-// Profile form
+
+// =====================================================
+// PROFILE SETTINGS FORM
+// =====================================================
+
 function renderStudentProfile() {
   const container = $("details");
   container.replaceChildren();
 
   if (!profileReady) {
-    container.append(element(
-      "p",
-      "empty",
-      "Loading your student profile..."
-    ));
+    container.append(
+      element(
+        "p",
+        "empty",
+        "Loading your student profile..."
+      )
+    );
+
     return;
   }
 
-  const form = element("form", "student-profile-form");
+  const form = element(
+    "form",
+    "student-profile-form"
+  );
+
   form.id = "student-profile-form";
 
   form.append(
-    element("h3", "", "Student profile"),
     element(
       "p",
       "profile-help",
@@ -550,10 +1297,19 @@ function renderStudentProfile() {
   );
 
   if (profileError) {
-    form.append(element("p", "profile-error", profileError));
+    form.append(
+      element(
+        "p",
+        "profile-error",
+        profileError
+      )
+    );
   }
 
-  const grid = element("div", "profile-form-grid");
+  const grid = element(
+    "div",
+    "profile-form-grid"
+  );
 
   const definitions = [
     [
@@ -586,14 +1342,37 @@ function renderStudentProfile() {
     ]
   ];
 
+  const iconNames = {
+    "profile-full-name": "user",
+    "profile-student-id": "id",
+    "profile-course": "graduation",
+    "profile-email-address": "mail"
+  };
+
   definitions.forEach(([id, title, type, value, max]) => {
-    const label = element("label", "profile-field", title);
+    const label = element(
+      "label",
+      "profile-field"
+    );
+
     label.htmlFor = id;
 
+    const caption = element(
+      "span",
+      "profile-field-label"
+    );
+
+    caption.append(
+      createIcon(iconNames[id]),
+      element("span", "", title)
+    );
+
     const input = element("input");
+
     input.id = id;
     input.type = type;
     input.value = value;
+    input.dataset.initialValue = value;
     input.maxLength = max;
     input.required = id !== "profile-email-address";
     input.readOnly = id === "profile-email-address";
@@ -603,25 +1382,31 @@ function renderStudentProfile() {
     }
 
     if (id === "profile-student-id") {
-      input.placeholder = "Enter your school Student ID";
+      input.placeholder =
+        "Enter your school Student ID";
     }
 
     if (id === "profile-course") {
-      input.placeholder = "Example: BS Information Technology";
+      input.placeholder =
+        "Example: BS Information Technology";
     }
 
-    label.append(input);
+    label.append(caption, input);
     grid.append(label);
   });
 
   const save = element(
     "button",
-    "profile-save-button",
-    "Save profile"
+    "profile-save-button"
   );
 
   save.type = "submit";
   save.disabled = profileSaving;
+
+  save.append(
+    createIcon("save"),
+    element("span", "", "Save profile")
+  );
 
   form.append(grid, save);
 
@@ -639,15 +1424,21 @@ function renderStudentProfile() {
     const user = currentUser;
     const version = sessionVersion;
 
-    const fullName = $("profile-full-name").value.trim();
-    const studentId = $("profile-student-id").value.trim();
-    const course = $("profile-course").value.trim();
+    const fullName =
+      $("profile-full-name").value.trim();
+
+    const studentId =
+      $("profile-student-id").value.trim();
+
+    const course =
+      $("profile-course").value.trim();
 
     if (!fullName || !studentId || !course) {
       studentMessage(
         "Complete your full name, Student ID, and course.",
         true
       );
+
       return;
     }
 
@@ -655,29 +1446,46 @@ function renderStudentProfile() {
     save.disabled = true;
     save.textContent = "Saving...";
 
+    form.querySelectorAll("input").forEach(
+      (input) => {
+        input.readOnly = true;
+      }
+    );
+
     try {
-      await setDoc(doc(db, "users", user.uid), {
+      const saved = await profileService.save(
+        user,
         fullName,
         studentId,
-        course,
-        email: user.email,
-        updatedAt: serverTimestamp()
-      });
+        course
+      );
 
       if (version === sessionVersion) {
-        studentProfile = {
-          ...studentProfile,
-          fullName,
-          studentId,
-          course,
-          email: user.email
-        };
+        profileModel = saved;
+        studentProfile = saved.toData();
 
+        [
+          "profile-full-name",
+          "profile-student-id",
+          "profile-course"
+        ].forEach((id) => {
+          const input = $(id);
+
+          if (input) {
+            input.dataset.initialValue =
+              input.value.trim();
+          }
+        });
+
+        form.dataset.dirty = "false";
         profileError = "";
+
         fillProfile(user);
         updateProfileNotice();
 
-        studentMessage("Student profile saved successfully.");
+        studentMessage(
+          "Student profile saved successfully."
+        );
       }
     } catch (error) {
       if (version === sessionVersion) {
@@ -687,25 +1495,58 @@ function renderStudentProfile() {
         );
       }
     } finally {
-      profileSaving = false;
+      if (version === sessionVersion) {
+        profileSaving = false;
+      }
+
       save.disabled = false;
-      save.textContent = "Save profile";
+
+      form.querySelectorAll("input").forEach(
+        (input) => {
+          input.readOnly =
+            input.id === "profile-email-address";
+        }
+      );
+
+      save.replaceChildren(
+        createIcon("save"),
+        element("span", "", "Save profile")
+      );
     }
+  });
+
+  form.addEventListener("input", () => {
+    const dirty = [
+      ...form.querySelectorAll(
+        "input:not([readonly])"
+      )
+    ].some(
+      (input) =>
+        input.value !==
+          input.dataset.initialValue
+    );
+
+    form.dataset.dirty = String(dirty);
   });
 
   container.append(form);
 }
 
-// Real-time data
+
+// =====================================================
+// REAL-TIME LISTENERS
+// =====================================================
+
 function startProfileListener(user, version) {
-  stopProfile = onSnapshot(
-    doc(db, "users", user.uid),
-    (snapshot) => {
+  stopProfile = profileService.listen(
+    user,
+    (profile) => {
       if (version !== sessionVersion) return;
 
       profileReady = true;
       profileError = "";
-      studentProfile = snapshot.exists() ? snapshot.data() : {};
+      profileModel = profile;
+      studentProfile = profile.toData();
 
       fillProfile(user);
       updateProfileNotice();
@@ -714,7 +1555,9 @@ function startProfileListener(user, version) {
 
       if (
         currentView === "settings" &&
-        !form?.contains(document.activeElement)
+        !profileSaving &&
+        !form?.contains(document.activeElement) &&
+        form?.dataset.dirty !== "true"
       ) {
         renderStudentProfile();
       }
@@ -723,6 +1566,7 @@ function startProfileListener(user, version) {
       if (version !== sessionVersion) return;
 
       profileReady = true;
+
       profileError =
         `Unable to load your profile (${error.code}). Publish the profile Firestore Rules.`;
 
@@ -738,10 +1582,13 @@ function startProfileListener(user, version) {
 function refreshDataViews() {
   if (!currentUser) return;
 
-  if (["library", "history"].includes(currentView)) {
+  if (
+    ["library", "history"].includes(currentView)
+  ) {
     renderBorrowing();
   } else if (
-    ["discover", "category", "favourite"].includes(currentView)
+    ["discover", "category", "favourite"]
+      .includes(currentView)
   ) {
     renderCategories();
     renderBooks();
@@ -760,7 +1607,9 @@ function startDataListeners(user, version) {
       catalogueError = "";
 
       liveBooks = new Map(
-        snapshot.docs.map((item) => [item.id, item.data()])
+        snapshot.docs.map(
+          (item) => [item.id, item.data()]
+        )
       );
 
       refreshDataViews();
@@ -786,10 +1635,12 @@ function startDataListeners(user, version) {
       requestsReady = true;
       requestsError = "";
 
-      requests = snapshot.docs.map((item) => ({
-        ...item.data(),
-        id: item.id
-      }));
+      requests = snapshot.docs.map(
+        (item) => ({
+          ...item.data(),
+          id: item.id
+        })
+      );
 
       requests.sort(
         (a, b) =>
@@ -810,18 +1661,24 @@ function startDataListeners(user, version) {
   );
 }
 
-// Favourites
+
+// =====================================================
+// FAVOURITES
+// =====================================================
+
 function updateFavouriteButton(button, book) {
   const saved = favourites.has(book.id);
 
   button.classList.toggle("saved", saved);
-  button.setAttribute("aria-pressed", String(saved));
+
+  button.setAttribute(
+    "aria-pressed",
+    String(saved)
+  );
 
   button.setAttribute(
     "aria-label",
-    `${saved ? "Remove" : "Save"} ${book.title} ${
-      saved ? "from" : "to"
-    } favourites`
+    `${saved ? "Remove" : "Save"} ${book.title} ${saved ? "from" : "to"} favourites`
   );
 }
 
@@ -835,7 +1692,11 @@ function toggleFavourite(book, button) {
   }
 
   try {
-    localStorage.setItem(storageKey, JSON.stringify([...next]));
+    localStorage.setItem(
+      storageKey,
+      JSON.stringify([...next])
+    );
+
     favourites = next;
 
     studentMessage(
@@ -857,26 +1718,52 @@ function toggleFavourite(book, button) {
   }
 }
 
-// Borrowing
+
+// =====================================================
+// AVAILABILITY AND BORROW REQUESTS
+// =====================================================
+
 function createBorrowingActions(book) {
   const wrapper = element("div");
-  const note = element("p", "availability-text");
-  const controls = element("div", "book-actions");
 
-  const check = element("button", "", "View Availability");
+  const note = element(
+    "p",
+    "availability-text"
+  );
+
+  const controls = element(
+    "div",
+    "book-actions"
+  );
+
+  const check = element(
+    "button",
+    "",
+    "View Availability"
+  );
+
   check.type = "button";
 
-  const borrow = element("button", "borrow-button", "Borrow Book");
+  const borrow = element(
+    "button",
+    "borrow-button",
+    "Borrow Book"
+  );
+
   borrow.type = "button";
 
   const active = requests.find(
     (request) =>
       request.bookId === book.id &&
-      ["pending", "approved"].includes(request.status)
+      ["pending", "approved"].includes(
+        request.status
+      )
   );
 
-  const copies = liveBooks.get(book.id)?.availableCopies;
-  const available = Number.isInteger(copies) && copies > 0;
+  const copies =
+    liveBooks.get(book.id)?.availableCopies;
+
+  const available = book.isAvailable();
 
   note.textContent = catalogueError || (
     !catalogueReady
@@ -907,14 +1794,19 @@ function createBorrowingActions(book) {
 
   check.addEventListener("click", async () => {
     const version = sessionVersion;
+
     check.disabled = true;
     note.textContent = "Checking availability...";
 
     try {
-      const snapshot = await getDoc(doc(db, "books", book.id));
+      const snapshot = await getDoc(
+        doc(db, "books", book.id)
+      );
+
       if (version !== sessionVersion) return;
 
-      const count = snapshot.data()?.availableCopies;
+      const count =
+        snapshot.data()?.availableCopies;
 
       const text = !snapshot.exists()
         ? "Not listed for borrowing yet."
@@ -925,10 +1817,16 @@ function createBorrowingActions(book) {
             : `${count} available copies. Admin approval required.`;
 
       note.textContent = text;
-      studentMessage(text, false, "info");
+
+      studentMessage(
+        text,
+        false,
+        "info"
+      );
     } catch {
       if (version === sessionVersion) {
-        note.textContent = "Unable to check availability.";
+        note.textContent =
+          "Unable to check availability.";
 
         studentMessage(
           "Unable to check availability. Try again.",
@@ -955,10 +1853,14 @@ function createBorrowingActions(book) {
         false,
         "info"
       );
+
       return;
     }
 
-    if (profileError || !profileComplete()) {
+    if (
+      profileError ||
+      !profileComplete()
+    ) {
       setView("settings");
 
       studentMessage(
@@ -995,52 +1897,18 @@ function createBorrowingActions(book) {
       }
 
       borrow.textContent = "Sending request...";
-      studentMessage("Sending your borrow request...", false, "info");
 
-      const requestRef = doc(collection(db, "borrowRequests"));
-      const lockRef = doc(
-        db,
-        "borrowLocks",
-        `${user.uid}_${book.id}`
+      studentMessage(
+        "Sending your borrow request...",
+        false,
+        "info"
       );
 
-      await runTransaction(db, async (transaction) => {
-        const bookSnapshot = await transaction.get(
-          doc(db, "books", book.id)
-        );
-
-        const lockSnapshot = await transaction.get(lockRef);
-        const count = bookSnapshot.data()?.availableCopies;
-
-        if (
-          !bookSnapshot.exists() ||
-          !Number.isInteger(count) ||
-          count <= 0
-        ) {
-          throw new Error(
-            "Book not available. Please select another book."
-          );
-        }
-
-        if (lockSnapshot.exists()) {
-          throw new Error(
-            "You already have an active request for this book."
-          );
-        }
-
-        transaction.set(requestRef, {
-          studentUid: user.uid,
-          bookId: book.id,
-          status: "pending",
-          requestedAt: serverTimestamp()
-        });
-
-        transaction.set(lockRef, {
-          studentUid: user.uid,
-          bookId: book.id,
-          requestId: requestRef.id
-        });
-      });
+      await borrowingService.requestBook(
+        user,
+        profileModel,
+        book.id
+      );
 
       if (version === sessionVersion) {
         studentMessage(
@@ -1070,7 +1938,11 @@ function createBorrowingActions(book) {
   return wrapper;
 }
 
-// Cancel only an owned pending request.
+
+// =====================================================
+// CANCEL PENDING REQUEST
+// =====================================================
+
 async function cancelPendingRequest(request) {
   if (
     !currentUser ||
@@ -1106,52 +1978,16 @@ async function cancelPendingRequest(request) {
       return;
     }
 
-    studentMessage("Cancelling your request...", false, "info");
+    studentMessage(
+      "Cancelling your request...",
+      false,
+      "info"
+    );
 
-    await runTransaction(db, async (transaction) => {
-      const requestRef = doc(db, "borrowRequests", request.id);
-      const snapshot = await transaction.get(requestRef);
-
-      if (!snapshot.exists()) {
-        throw new Error("This request no longer exists.");
-      }
-
-      const data = snapshot.data();
-
-      if (data.studentUid !== user.uid) {
-        throw new Error("You can only cancel your own request.");
-      }
-
-      if (data.status !== "pending") {
-        throw new Error(
-          "This request is no longer pending. Approved books must be returned through the librarian."
-        );
-      }
-
-      const lockRef = doc(
-        db,
-        "borrowLocks",
-        `${user.uid}_${data.bookId}`
-      );
-
-      const lock = await transaction.get(lockRef);
-
-      if (
-        !lock.exists() ||
-        lock.data().requestId !== request.id
-      ) {
-        throw new Error(
-          "The active request record needs checking. Contact the librarian."
-        );
-      }
-
-      transaction.update(requestRef, {
-        status: "cancelled",
-        cancelledAt: serverTimestamp()
-      });
-
-      transaction.delete(lockRef);
-    });
+    await borrowingService.cancelRequest(
+      user,
+      request.id
+    );
 
     if (version === sessionVersion) {
       studentMessage(
@@ -1175,54 +2011,77 @@ async function cancelPendingRequest(request) {
   }
 }
 
-// Catalogue
+
+// =====================================================
+// CATALOGUE AND CATEGORY SEARCH
+// =====================================================
+
 function renderBooks() {
   const grid = $("book-grid");
   grid.replaceChildren();
 
-  const text = $("search").value.trim().toLowerCase();
+  const text = $("search").value.trim();
 
-  const rows = catalogueBooks().filter((book) =>
-    `${book.title} ${book.author}`.toLowerCase().includes(text) &&
-    (
-      currentView !== "category" ||
-      selectedCategory === "All" ||
-      book.category === selectedCategory
-    ) &&
-    (
-      currentView !== "favourite" ||
-      favourites.has(book.id)
-    )
+  const rows = catalogueBooks().filter(
+    (book) =>
+      book.matchesSearch(text) &&
+      (
+        currentView !== "category" ||
+        selectedCategory === "All" ||
+        book.matchesCategory(selectedCategory)
+      ) &&
+      (
+        currentView !== "favourite" ||
+        favourites.has(book.id)
+      )
   );
 
   $("result-count").textContent =
     `${rows.length} book${rows.length === 1 ? "" : "s"}`;
 
   if (!rows.length) {
-    grid.append(element(
-      "p",
-      "empty",
-      currentView === "favourite" && !text
-        ? "No favourites yet. Tap the heart to save a book."
-        : "No books match your search."
-    ));
+    grid.append(
+      element(
+        "p",
+        "empty",
+        currentView === "favourite" && !text
+          ? "No favourites yet. Tap the heart to save a book."
+          : "No books match your search."
+      )
+    );
+
     return;
   }
 
   rows.forEach((book) => {
-    const card = element("article", "book-card");
+    const card = element(
+      "article",
+      "book-card"
+    );
+
     const cover = element("div", "cover");
 
     cover.style.backgroundColor = book.color;
     cover.style.color = book.ink;
 
-    const favourite = element("button", "favorite-button");
+    const favourite = element(
+      "button",
+      "favorite-button"
+    );
+
     favourite.type = "button";
     favourite.append(createIcon("heart"));
 
-    updateFavouriteButton(favourite, book);
+    updateFavouriteButton(
+      favourite,
+      book
+    );
+
     favourite.addEventListener("click", () => {
-      toggleFavourite(book, favourite);
+      toggleFavourite(
+        book,
+        favourite
+      );
     });
 
     cover.append(
@@ -1234,7 +2093,7 @@ function renderBooks() {
 
     card.append(
       cover,
-      element("h3", "", book.title),
+      recordHeading(book),
       element("p", "", book.author),
       createBorrowingActions(book)
     );
@@ -1253,7 +2112,11 @@ function renderCategories() {
 
   const categories = [
     "All",
-    ...new Set(catalogueBooks().map((book) => book.category))
+    ...new Set(
+      catalogueBooks().map(
+        (book) => book.category
+      )
+    )
   ];
 
   if (!categories.includes(selectedCategory)) {
@@ -1261,7 +2124,9 @@ function renderCategories() {
   }
 
   categories.forEach((category) => {
-    const selected = category === selectedCategory;
+    const selected =
+      category === selectedCategory;
+
     const button = element(
       "button",
       `chip${selected ? " active" : ""}`,
@@ -1269,7 +2134,11 @@ function renderCategories() {
     );
 
     button.type = "button";
-    button.setAttribute("aria-pressed", String(selected));
+
+    button.setAttribute(
+      "aria-pressed",
+      String(selected)
+    );
 
     button.addEventListener("click", () => {
       selectedCategory = category;
@@ -1281,38 +2150,57 @@ function renderCategories() {
   });
 }
 
-// Current loans and history
+
+// =====================================================
+// BORROWED BOOKS AND HISTORY
+// =====================================================
+
 function renderBorrowing() {
   const container = $("details");
   container.replaceChildren();
 
-  if (requestsError || !requestsReady) {
-    container.append(element(
-      "p",
-      "empty",
-      requestsError || "Loading borrowing records..."
-    ));
+  if (
+    requestsError ||
+    !requestsReady
+  ) {
+    container.append(
+      element(
+        "p",
+        "empty",
+        requestsError || "Loading borrowing records..."
+      )
+    );
+
     return;
   }
 
-  const rows = requests.filter((request) =>
-    currentView === "history"
-      ? ["returned", "rejected", "cancelled"].includes(request.status)
-      : ["pending", "approved"].includes(request.status)
+  const rows = requests.filter(
+    (request) =>
+      currentView === "history"
+        ? ["returned", "rejected", "cancelled"]
+            .includes(request.status)
+        : ["pending", "approved"]
+            .includes(request.status)
   );
 
   if (!rows.length) {
-    container.append(element(
-      "p",
-      "empty",
-      currentView === "history"
-        ? "No borrowing history yet."
-        : "No pending requests or borrowed books yet."
-    ));
+    container.append(
+      element(
+        "p",
+        "empty",
+        currentView === "history"
+          ? "No borrowing history yet."
+          : "No pending requests or borrowed books yet."
+      )
+    );
+
     return;
   }
 
-  const list = element("div", "loan-list");
+  const list = element(
+    "div",
+    "loan-list"
+  );
 
   rows.forEach((request) => {
     const overdue = isOverdue(request);
@@ -1334,74 +2222,101 @@ function renderBorrowing() {
     );
 
     if (request.status === "pending") {
-      info.append(element(
-        "p",
-        "",
-        "Waiting for admin approval. No copy has been issued."
-      ));
+      info.append(
+        element(
+          "p",
+          "",
+          "Waiting for admin approval. No copy has been issued."
+        )
+      );
     } else if (request.status === "approved") {
-      info.append(element(
-        "p",
-        "request-timestamp",
-        request.dueAt
-          ? `Due: ${formatDate(request.dueAt, true)}`
-          : "Contact the librarian for your due date."
-      ));
+      info.append(
+        element(
+          "p",
+          "request-timestamp",
+          request.dueAt
+            ? `Due: ${formatDate(request.dueAt, true)}`
+            : "Contact the librarian for your due date."
+        )
+      );
 
       if (overdue) {
-        info.append(element(
-          "p",
-          "overdue-reminder",
-          "Overdue — please return this book to the library."
-        ));
+        info.append(
+          element(
+            "p",
+            "overdue-reminder",
+            "Overdue — please return this book to the library."
+          )
+        );
       }
     } else if (request.status === "returned") {
-      info.append(element(
-        "p",
-        "request-timestamp",
-        request.returnedAt
-          ? `Returned: ${formatDate(request.returnedAt, true)}`
-          : "Book returned."
-      ));
+      info.append(
+        element(
+          "p",
+          "request-timestamp",
+          request.returnedAt
+            ? `Returned: ${formatDate(request.returnedAt, true)}`
+            : "Book returned."
+        )
+      );
     } else if (request.status === "cancelled") {
-      info.append(element(
-        "p",
-        "request-timestamp",
-        request.cancelledAt
-          ? `Cancelled: ${formatDate(request.cancelledAt, true)}`
-          : "Cancelled by student."
-      ));
+      info.append(
+        element(
+          "p",
+          "request-timestamp",
+          request.cancelledAt
+            ? `Cancelled: ${formatDate(request.cancelledAt, true)}`
+            : "Cancelled by student."
+        )
+      );
     } else {
-      info.append(element(
-        "p",
-        "",
-        request.reason || "Request declined by the admin."
-      ));
+      info.append(
+        element(
+          "p",
+          "",
+          request.reason ||
+            "Request declined by the admin."
+        )
+      );
     }
 
-    info.append(element("p", "", `Reference: ${request.id}`));
+    info.append(
+      element(
+        "p",
+        "",
+        `Reference: ${request.id}`
+      )
+    );
 
-    const actions = element("div", "loan-card-actions");
+    const actions = element(
+      "div",
+      "loan-card-actions"
+    );
 
-    actions.append(element(
-      "span",
-      `loan-status ${overdue ? "overdue" : request.status}`,
-      overdue
-        ? "Overdue"
-        : request.status === "approved"
-          ? "Borrowed"
-          : request.status
-    ));
+    actions.append(
+      element(
+        "span",
+        `loan-status ${overdue ? "overdue" : request.status}`,
+        overdue
+          ? "Overdue"
+          : request.status === "approved"
+            ? "Borrowed"
+            : request.status
+      )
+    );
 
     if (request.status === "pending") {
       const cancel = element(
         "button",
         "cancel-request-button",
-        cancelling.has(request.id) ? "Please wait..." : "Cancel request"
+        cancelling.has(request.id)
+          ? "Please wait..."
+          : "Cancel request"
       );
 
       cancel.type = "button";
-      cancel.disabled = cancelling.has(request.id);
+      cancel.disabled =
+        cancelling.has(request.id);
 
       cancel.addEventListener("click", () => {
         cancelPendingRequest(request);
@@ -1417,6 +2332,11 @@ function renderBorrowing() {
   container.append(list);
 }
 
+
+// =====================================================
+// NOTIFICATION DROPDOWN
+// =====================================================
+
 function renderNotifications() {
   const container = $("notification-list");
   container.replaceChildren();
@@ -1431,26 +2351,36 @@ function renderNotifications() {
   }
 
   const updates = requests
-    .filter((request) =>
-      ["approved", "rejected", "returned", "cancelled"]
-        .includes(request.status)
+    .filter(
+      (request) =>
+        ["approved", "rejected", "returned", "cancelled"]
+          .includes(request.status)
     )
-    .sort((a, b) =>
-      Number(isOverdue(b)) - Number(isOverdue(a)) ||
-      lastUpdate(b) - lastUpdate(a)
+    .sort(
+      (a, b) =>
+        Number(isOverdue(b)) -
+          Number(isOverdue(a)) ||
+        lastUpdate(b) - lastUpdate(a)
     )
     .slice(0, 5);
 
-  if (requestsError || !requestsReady || !updates.length) {
-    container.append(element(
-      "p",
-      "",
-      requestsError || (
-        !requestsReady
-          ? "Loading updates..."
-          : "No borrowing updates yet."
+  if (
+    requestsError ||
+    !requestsReady ||
+    !updates.length
+  ) {
+    container.append(
+      element(
+        "p",
+        "",
+        requestsError || (
+          !requestsReady
+            ? "Loading updates..."
+            : "No borrowing updates yet."
+        )
       )
-    ));
+    );
+
     return;
   }
 
@@ -1462,14 +2392,19 @@ function renderNotifications() {
       `notification-item${overdue ? " overdue-notification" : ""}`
     );
 
-    let text = `${bookTitle(request.bookId)} — ${
-      overdue
-        ? "Overdue. Please return this book."
-        : request.status
-    }`;
+    let text =
+      `${bookTitle(request.bookId)} — ${
+        overdue
+          ? "Overdue. Please return this book."
+          : request.status
+      }`;
 
-    if (request.status === "approved" && request.dueAt) {
-      text += ` Due ${formatDate(request.dueAt, true)}.`;
+    if (
+      request.status === "approved" &&
+      request.dueAt
+    ) {
+      text +=
+        ` Due ${formatDate(request.dueAt, true)}.`;
     }
 
     item.append(
@@ -1485,77 +2420,116 @@ function renderNotifications() {
   });
 }
 
-// Views
+
+// =====================================================
+// VIEW SWITCHING
+// =====================================================
+
 function renderDetails(title, lines) {
-  const box = element("div", "detail-box");
-  box.append(element("h3", "", title));
+  const box = element(
+    "div",
+    "detail-box"
+  );
+
+  box.append(
+    element("h3", "", title)
+  );
 
   lines.forEach((line) => {
-    box.append(element("p", "", line));
+    box.append(
+      element("p", "", line)
+    );
   });
 
   $("details").replaceChildren(box);
 }
 
 function setView(view) {
-  if (!views[view] || !currentUser) return;
+  if (
+    !views[view] ||
+    !currentUser
+  ) {
+    return;
+  }
 
   currentView = view;
+
   closeDropdowns();
   closeSidebar();
   studentMessage("");
 
-  const [title, description, section] = views[view];
+  const [title, description, section] =
+    views[view];
 
   $("page-title").textContent = title;
   $("page-description").textContent = description;
   $("section-title").textContent = section;
 
-  document.querySelectorAll(".nav-button[data-view]").forEach(
-    (button) => {
-      const active = button.dataset.view === view;
-      button.classList.toggle("active", active);
+  document.querySelectorAll(
+    ".nav-button[data-view]"
+  ).forEach((button) => {
+    const active =
+      button.dataset.view === view;
 
-      if (active) {
-        button.setAttribute("aria-current", "page");
-      } else {
-        button.removeAttribute("aria-current");
-      }
+    button.classList.toggle(
+      "active",
+      active
+    );
+
+    if (active) {
+      button.setAttribute(
+        "aria-current",
+        "page"
+      );
+    } else {
+      button.removeAttribute(
+        "aria-current"
+      );
     }
-  );
+  });
 
   const isCatalogue =
-    ["discover", "category", "favourite"].includes(view);
+    ["discover", "category", "favourite"]
+      .includes(view);
 
   $("categories").hidden = view !== "category";
   $("book-grid").hidden = !isCatalogue;
   $("details").hidden = isCatalogue;
   $("catalog-note").hidden = !isCatalogue;
   $("result-count").hidden = !isCatalogue;
-  $("search").disabled = !isCatalogue;
 
-  $("search").placeholder = isCatalogue
-    ? "Search books or authors..."
-    : "Search is available in the catalogue";
+  $("search").disabled = false;
+
+  $("search").placeholder =
+    "Search title, author, category or Book ID...";
 
   if (isCatalogue) {
     renderCategories();
     renderBooks();
-  } else if (["library", "history"].includes(view)) {
+  } else if (
+    ["library", "history"].includes(view)
+  ) {
     renderBorrowing();
   } else if (view === "settings") {
     renderStudentProfile();
   } else if (view === "support") {
-    renderDetails("Contact your librarian", [
-      "Visit your school library desk for account assistance.",
-      "Pending requests can be cancelled from My Borrowed Books.",
-      "Approved books must be returned through the librarian.",
-      "For a forgotten password, use Forgot password on the login page."
-    ]);
+    renderDetails(
+      "Contact your librarian",
+      [
+        "Visit your school library desk for account assistance.",
+        "Pending requests can be cancelled from My Borrowed Books.",
+        "Approved books must be returned through the librarian.",
+        "For a forgotten password, use Forgot password on the login page."
+      ]
+    );
   }
 }
 
-// Logout
+
+// =====================================================
+// LOGOUT CONFIRMATION
+// =====================================================
+
 async function logoutStudent() {
   if (
     !currentUser ||
@@ -1566,6 +2540,7 @@ async function logoutStudent() {
   }
 
   loggingOut = true;
+
   const version = sessionVersion;
 
   try {
@@ -1577,10 +2552,18 @@ async function logoutStudent() {
       true
     );
 
-    if (!confirmed || version !== sessionVersion) return;
+    if (
+      !confirmed ||
+      version !== sessionVersion
+    ) {
+      return;
+    }
 
     await signOut(auth);
-    window.location.replace("./login.html");
+
+    window.location.replace(
+      "./login.html"
+    );
   } catch {
     studentMessage(
       "Unable to log out. Check your connection and try again.",
@@ -1591,60 +2574,103 @@ async function logoutStudent() {
   }
 }
 
-// Navigation
+
+// =====================================================
+// NAVIGATION EVENTS
+// =====================================================
+
 document.addEventListener("click", (event) => {
-  if (event.target.closest("[data-logout]")) {
+  if (
+    event.target.closest("[data-logout]")
+  ) {
     logoutStudent();
     return;
   }
 
-  if (event.target.closest(
-    '#profile button[data-view="settings"], [data-student-profile], [data-profile-details]'
-  )) {
+  if (
+    event.target.closest(
+      "[data-student-profile], [data-profile-details]"
+    )
+  ) {
     showProfile();
     return;
   }
 
-  const view = event.target.closest("[data-view]");
+  const view = event.target.closest(
+    "[data-view]"
+  );
 
   if (view) {
     setView(view.dataset.view);
     return;
   }
 
-  const trigger = event.target.closest("[data-dropdown]");
+  const trigger = event.target.closest(
+    "[data-dropdown]"
+  );
 
   if (trigger) {
-    const panel = $(trigger.dataset.dropdown);
+    const panel = $(
+      trigger.dataset.dropdown
+    );
+
     if (!panel) return;
 
     const open = panel.hidden;
+
     closeDropdowns();
 
     panel.hidden = !open;
-    trigger.setAttribute("aria-expanded", String(open));
+
+    trigger.setAttribute(
+      "aria-expanded",
+      String(open)
+    );
+
     return;
   }
 
-  if (!event.target.closest(".action-wrap")) {
+  if (
+    !event.target.closest(".action-wrap")
+  ) {
     closeDropdowns();
   }
 });
 
 $("menu-button").addEventListener("click", () => {
-  const open = !$("sidebar").classList.contains("open");
+  const open =
+    !$("sidebar").classList.contains("open");
 
-  $("sidebar").classList.toggle("open", open);
+  $("sidebar").classList.toggle(
+    "open",
+    open
+  );
+
   $("shade").hidden = !open;
-  $("menu-button").setAttribute("aria-expanded", String(open));
+
+  $("menu-button").setAttribute(
+    "aria-expanded",
+    String(open)
+  );
 });
 
-$("shade").addEventListener("click", closeSidebar);
+$("shade").addEventListener(
+  "click",
+  closeSidebar
+);
 
 $("search").addEventListener("input", () => {
+  if (currentView === "category") {
+    selectedCategory = "All";
+    renderCategories();
+  }
+
   if (
-    ["discover", "category", "favourite"].includes(currentView)
+    !["discover", "category", "favourite"]
+      .includes(currentView)
   ) {
+    setView("discover");
+  } else {
     renderBooks();
   }
 });
@@ -1659,24 +2685,34 @@ document.addEventListener("keydown", (event) => {
   closeDropdowns();
   trigger?.focus();
 
-  if ($("sidebar").classList.contains("open")) {
+  if (
+    $("sidebar").classList.contains("open")
+  ) {
     closeSidebar();
     $("menu-button").focus();
   }
 });
 
-// Authentication
+
+// =====================================================
+// AUTHENTICATION AND SESSION RESET
+// =====================================================
+
 onAuthStateChanged(auth, async (user) => {
   const version = ++sessionVersion;
 
   stopBooks?.();
   stopRequests?.();
   stopProfile?.();
+
   activeDialog?.close();
   studentMessage("");
 
   currentUser = null;
+
   studentProfile = {};
+  profileModel = null;
+  profileSaving = false;
   profileReady = false;
   profileError = "";
 
@@ -1696,13 +2732,21 @@ onAuthStateChanged(auth, async (user) => {
   $("loading").hidden = true;
   $("loading").textContent = "";
 
-  if (!user || !user.emailVerified) {
-    window.location.replace("./login.html");
+  if (
+    !user ||
+    !user.emailVerified
+  ) {
+    window.location.replace(
+      "./login.html"
+    );
+
     return;
   }
 
   try {
-    const snapshot = await getDoc(doc(db, "roles", user.uid));
+    const snapshot = await getDoc(
+      doc(db, "roles", user.uid)
+    );
 
     if (
       version !== sessionVersion ||
@@ -1716,7 +2760,10 @@ onAuthStateChanged(auth, async (user) => {
       : "student";
 
     if (role === "admin") {
-      window.location.replace("./adminfiles/admin.html");
+      window.location.replace(
+        "./adminfiles/admin.html"
+      );
+
       return;
     }
 
@@ -1727,16 +2774,24 @@ onAuthStateChanged(auth, async (user) => {
     }
 
     currentUser = user;
-    storageKey = `bookbase:favourites:${user.uid}`;
+
+    profileModel =
+      new StudentProfile(user);
+
+    storageKey =
+      `bookbase:favourites:${user.uid}`;
 
     try {
       const saved = JSON.parse(
-        localStorage.getItem(storageKey) || "[]"
+        localStorage.getItem(storageKey) ||
+          "[]"
       );
 
       favourites = new Set(
         Array.isArray(saved)
-          ? saved.filter((id) => typeof id === "string")
+          ? saved.filter(
+              (id) => typeof id === "string"
+            )
           : []
       );
     } catch {
@@ -1744,39 +2799,58 @@ onAuthStateChanged(auth, async (user) => {
     }
 
     fillProfile(user);
+
     $("app").hidden = false;
 
     setView("discover");
     updateProfileNotice();
 
-    startProfileListener(user, version);
-    startDataListeners(user, version);
+    startProfileListener(
+      user,
+      version
+    );
+
+    startDataListeners(
+      user,
+      version
+    );
   } catch (error) {
-    if (version !== sessionVersion) return;
+    if (
+      version !== sessionVersion
+    ) {
+      return;
+    }
 
     $("loading").hidden = false;
 
-    $("loading").textContent = error.code
-      ? `Unable to check account (${error.code}). Check your connection and Firestore Rules, then refresh.`
-      : error.message;
+    $("loading").textContent =
+      error.code
+        ? `Unable to check account (${error.code}). Check your connection and Firestore Rules, then refresh.`
+        : error.message;
   }
 });
 
-// Live clock and overdue refresh
-const clockDateFormatter = new Intl.DateTimeFormat("en-PH", {
-  month: "long",
-  day: "numeric",
-  year: "numeric",
-  timeZone: "Asia/Manila"
-});
 
-const clockTimeFormatter = new Intl.DateTimeFormat("en-PH", {
-  hour: "2-digit",
-  minute: "2-digit",
-  second: "2-digit",
-  hour12: true,
-  timeZone: "Asia/Manila"
-});
+// =====================================================
+// LIVE PHILIPPINE CLOCK AND OVERDUE REFRESH
+// =====================================================
+
+const clockDateFormatter =
+  new Intl.DateTimeFormat("en-PH", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "Asia/Manila"
+  });
+
+const clockTimeFormatter =
+  new Intl.DateTimeFormat("en-PH", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Manila"
+  });
 
 let clockTimer = null;
 
@@ -1785,26 +2859,47 @@ function updateDashboardClock() {
   const date = $("clock-date");
   const time = $("clock-time");
 
-  if (!target || !date || !time) return;
+  if (
+    !target ||
+    !date ||
+    !time
+  ) {
+    return;
+  }
 
   const now = new Date();
 
   target.dateTime = now.toISOString();
-  date.textContent = clockDateFormatter.format(now);
-  time.textContent = `${clockTimeFormatter.format(now)} PHT`;
 
-  if (currentUser && requestsReady) {
+  date.textContent =
+    clockDateFormatter.format(now);
+
+  time.textContent =
+    `${clockTimeFormatter.format(now)} PHT`;
+
+  if (
+    currentUser &&
+    requestsReady
+  ) {
     const signature = requests
-      .filter((request) => request.status === "approved")
-      .map((request) =>
-        `${request.id}:${isOverdue(request, now.getTime())}`
+      .filter(
+        (request) =>
+          request.status === "approved"
+      )
+      .map(
+        (request) =>
+          `${request.id}:${isOverdue(request, now.getTime())}`
       )
       .join("|");
 
-    if (signature !== overdueSignature) {
+    if (
+      signature !== overdueSignature
+    ) {
       overdueSignature = signature;
 
-      if (currentView === "library") {
+      if (
+        currentView === "library"
+      ) {
         renderBorrowing();
       }
 
@@ -1815,8 +2910,13 @@ function updateDashboardClock() {
 
 function startDashboardClock() {
   clearInterval(clockTimer);
+
   updateDashboardClock();
-  clockTimer = setInterval(updateDashboardClock, 1000);
+
+  clockTimer = setInterval(
+    updateDashboardClock,
+    1000
+  );
 }
 
 startDashboardClock();
@@ -1825,10 +2925,16 @@ window.addEventListener("pagehide", () => {
   clearInterval(clockTimer);
 });
 
-window.addEventListener("pageshow", startDashboardClock);
+window.addEventListener(
+  "pageshow",
+  startDashboardClock
+);
 
-document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) {
-    updateDashboardClock();
+document.addEventListener(
+  "visibilitychange",
+  () => {
+    if (!document.hidden) {
+      updateDashboardClock();
+    }
   }
-});
+);
