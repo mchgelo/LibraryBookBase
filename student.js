@@ -2,7 +2,7 @@
 // Open oop/ for the four presentation modules.
 import { LibraryRecord } from "./oop/encapsulation.js";
 import { Book, StudentProfile } from "./oop/inheritance.js";
-import { CatalogueService, StudentProfileService, BorrowingService } from "./oop/abstraction.js";
+import { CatalogueService, StudentProfileService, BorrowingService } from "./oop/abstraction.js?v=remove-books-1";
 import { recordSummary } from "./oop/polymorphism.js";
 export { LibraryRecord, Book, StudentProfile, CatalogueService, StudentProfileService, BorrowingService };
 
