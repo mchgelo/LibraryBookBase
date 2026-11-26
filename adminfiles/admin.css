@@ -984,3 +984,23 @@ body:has(#loading:not([hidden]):not(:empty)) #page-loader { display: none; }
   * { transition: none !important; }
   #page-loader span { width: 100%; animation: none; }
 }
+
+/* Catalogue removal: red signals a destructive action; confirmation is required. */
+.admin-remove-book {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 40px;
+  padding: 10px 12px;
+  margin-top: 4px;
+  border: 1px solid #fecdd3;
+  border-radius: 8px;
+  background: #fff1f2;
+  color: #9f1239;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.admin-remove-book:hover:not(:disabled) { background: #ffe4e6; border-color: #fda4af; }
+.admin-remove-book:disabled { opacity: .6; cursor: wait; }

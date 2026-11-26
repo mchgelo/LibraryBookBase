@@ -2,7 +2,7 @@
 // Open oop/ for the four presentation modules.
 import { AdminRecord, BookCoverPalette } from "../oop/encapsulation.js";
 import { AdminProfile, AdminBook } from "../oop/inheritance.js";
-import { AdminProfileService, AdminBorrowingService, AdminCatalogueService, AdminFilterService } from "../oop/abstraction.js";
+import { AdminProfileService, AdminBorrowingService, AdminCatalogueService, AdminFilterService } from "../oop/abstraction.js?v=remove-books-1";
 import { recordSummary } from "../oop/polymorphism.js";
 export { AdminRecord, AdminProfile, AdminBook, BookCoverPalette, AdminProfileService, AdminBorrowingService, AdminCatalogueService, AdminFilterService };
 
@@ -91,6 +91,7 @@ let overdueSignature = "";
 const borrowerProfiles = new Map();
 const profileSubscriptions = new Map();
 const processing = new Set();
+const removingBooks = new Set();
 
 
 // =====================================================
@@ -920,6 +921,7 @@ function refresh() {
   $("copies-count").textContent =
     booksLoaded && !booksError
       ? [...books.values()].reduce((sum, book) => {
+          if (book.removed === true) return sum;
           const copies = book.availableCopies;
 
           return sum + (
@@ -1069,7 +1071,9 @@ function renderRequests() {
     );
 
     if (request.status === "pending") {
+      const removed = books.get(request.bookId)?.removed === true;
       const copies = books.get(request.bookId)?.availableCopies;
+      if (removed) details.append(node("p", "profile-note", "Book removed from catalogue. Reject this pending request."));
 
       details.append(node(
         "p",
@@ -1089,6 +1093,7 @@ function renderRequests() {
       approve.disabled =
         processing.has(request.id) ||
         Boolean(booksError) ||
+        removed ||
         !Number.isInteger(copies) ||
         copies <= 0;
 
@@ -1420,6 +1425,7 @@ function renderBooks() {
     if (book.registered) {
       const edit = node("button", "admin-edit-book");
       edit.type = "button";
+      edit.disabled = removingBooks.has(book.id);
 
       edit.append(
         createIcon("edit"),
@@ -1482,8 +1488,59 @@ function renderBooks() {
       details.append(button);
     }
 
+    const remove = node("button", "admin-remove-book", "Remove book");
+    remove.type = "button";
+    remove.setAttribute("aria-label", `Remove book: ${book.title}`);
+    remove.disabled = removingBooks.has(book.id);
+    if (remove.disabled) remove.textContent = "Removing...";
+    remove.addEventListener("click", () => removeCatalogueBook(book, remove));
+    details.append(remove);
+
     card.append(cover, details);
     container.append(card);
+  }
+}
+
+async function removeCatalogueBook(book, trigger) {
+  if (!currentAdminProfile || removingBooks.has(book.id) || document.querySelector("dialog[open]")) return;
+  const session = version;
+  const profile = currentAdminProfile;
+  removingBooks.add(book.id);
+
+  try {
+    const confirmed = await ask(
+      "Remove book?",
+      `Remove “${book.title}” from the admin and student catalogues? Borrowing records will stay available, and issued copies can still be returned. New requests and approvals for this book will stop.`,
+      "Yes, remove book",
+      true
+    );
+    if (session !== version) return;
+    if (!confirmed) {
+      message("Book removal cancelled.", false, "info");
+      return;
+    }
+
+    renderBooks();
+    message("Removing book...", false, "info");
+    await adminCatalogueService.removeBook(profile, book);
+    if (session !== version) return;
+    message(`“${book.title}” removed successfully.`);
+  } catch (error) {
+    if (session === version) message(
+      error.code === "permission-denied"
+        ? "Unable to remove book. Check your admin role and Firebase permissions."
+        : error.code
+          ? "Unable to remove book. Check your connection and try again."
+          : error.message,
+      true
+    );
+  } finally {
+    removingBooks.delete(book.id);
+    if (session === version) {
+      renderBooks();
+      if (trigger?.isConnected) trigger.focus();
+      else document.querySelector("#admin-search")?.focus();
+    }
   }
 }
 
@@ -1845,6 +1902,7 @@ onAuthStateChanged(auth, async user => {
   books = new Map();
   requests = [];
   processing.clear();
+  removingBooks.clear();
 
   booksLoaded = false;
   requestsLoaded = false;
