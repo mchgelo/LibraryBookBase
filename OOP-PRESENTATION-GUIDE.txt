@@ -1,0 +1,70 @@
+BOOKBASE: OOP FILES FOR PRESENTATION
+
+PROJECT STRUCTURE
+login.html / script.js: login page and startup.
+student.html / student.js: student UI, events and live data.
+adminfiles/admin.html / admin.js: administrator UI, events and live data.
+oop/encapsulation.js: private state, runtime base contracts and login controller.
+oop/inheritance.js: the six actual child classes.
+oop/abstraction.js: public service operations that hide Firebase details.
+oop/polymorphism.js: shared calls to overridden methods on actual objects.
+oop/search-utils.js: shared text normalization; a utility, not another pillar.
+
+IMPORTANT: Pillars overlap within real classes. Splitting files is for presentation; it is not by itself proof of OOP. Base classes also enforce abstraction, and subclasses contain encapsulated state and overridden methods.
+
+WHERE TO POINT DURING THE PRESENTATION
+
+oop/encapsulation.js
+Line 7: export class LibraryUser
+Line 59: export class LibraryRecord
+Line 93: export class AdminRecord
+Line 116: export class PasswordPolicy
+Line 141: export class BookCoverPalette
+Line 176: export class LoginController
+
+oop/inheritance.js
+Line 8: export class Student extends LibraryUser
+Line 18: export class Librarian extends LibraryUser
+Line 28: export class Book extends LibraryRecord
+Line 96: export class StudentProfile extends LibraryRecord
+Line 184: export class AdminProfile extends AdminRecord
+Line 208: export class AdminBook extends AdminRecord
+
+oop/abstraction.js
+Line 13: export class LoginService
+Line 259: export class CatalogueService
+Line 289: export class StudentProfileService
+Line 356: export class BorrowingService
+Line 504: export class AdminProfileService
+Line 548: export class AdminBorrowingService
+Line 707: export class AdminCatalogueService
+Line 890: export class AdminFilterService
+
+oop/polymorphism.js
+Line 7: export function dashboardPath(account)
+Line 13: export function recordSummary(record)
+
+SIMPLE DEFENSE EXPLANATION
+Encapsulation: Show AdminBook in inheritance.js. #copies is private. issueCopy(), addCopies() and returnCopy() validate inventory updates. Also show private fields and methods in encapsulation.js.
+Inheritance: Show extends LibraryUser, extends LibraryRecord and extends AdminRecord in inheritance.js. The constructors call super(...).
+Abstraction: Show the base new.target checks and throwing required methods in encapsulation.js. Then show public operations in abstraction.js, such as requestBook(), approve() and returnBook(), which hide Firebase transactions.
+Polymorphism: Show dashboardPath(account) in polymorphism.js. It calls account.getDashboardPath(); Student and Librarian implement it differently. recordSummary(record) similarly calls the overridden getSummary() methods on book and profile objects.
+Actual usage: LoginService.openDashboard() uses dashboardPath(account). Both dashboards call recordSummary(record) through their recordHeading() function. These are connected application code, not isolated examples.
+JavaScript has no native abstract keyword. The three base-class contracts are enforced at runtime.
+The same 20 class names and six extends relationships are retained. The previous UML class members still apply, but source-file locations moved to oop/. Polymorphism dispatchers are functions, not new classes.
+
+INSTALLATION - EXISTING GITHUB PROJECT
+Back up your project first. Copy the entire oop folder plus script.js, student.js, adminfiles/admin.js, login.html, student.html and adminfiles/admin.html into their matching locations in your existing PROJECT OP folder.
+Do not copy only the four pillar files. The page entry imports and HTML version tags are required too.
+Keep your existing .git folder. This ZIP contains no .git metadata.
+CSS, assets, Firebase configuration and existing HTML content are retained. Only JavaScript entry version tags in the HTML are refreshed.
+Inside PROJECT OP, run:
+git add oop script.js student.js adminfiles/admin.js login.html student.html adminfiles/admin.html
+git commit -m "organize oop for presentation"
+git push origin main
+Wait for the GitHub Pages deployment. The new oop folder must also be pushed.
+This refactor is proposed on the organize-oop-for-presentation branch. The main branch and live site are unchanged until it is merged. Firebase rules and live database data are unchanged.
+
+VERIFICATION
+All eight JavaScript files pass Node syntax checks. Mocked-Firebase browser checks cover login, roles, registration feedback, profile synchronization, book search, request/cancellation, book editing, sorting, custom due dates, inventory approval/return and mobile layouts.
+Local tests use mocked Firebase. Live Firebase permissions and actual email delivery are not tested.
