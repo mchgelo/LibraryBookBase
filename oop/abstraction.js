@@ -279,7 +279,7 @@ export class CatalogueService {
       });
     });
 
-    return [...merged].map(
+    return [...merged].filter(([, data]) => data.removed !== true).map(
       ([id, data]) =>
         new Book(id, data, inventory.has(id))
     );
@@ -409,7 +409,7 @@ export class BorrowingService {
         ? new Book(bookId, snapshot.data(), true)
         : null;
 
-      if (!book?.isAvailable()) {
+      if (snapshot.data()?.removed === true || !book?.isAvailable()) {
         throw new Error(
           "Book not available. Please select another book."
         );
@@ -672,6 +672,9 @@ export class AdminBorrowingService {
       );
 
       if (action === "approve") {
+        if (bookSnapshot.data().removed === true) {
+          throw new Error("This book was removed from the catalogue. Reject this pending request instead.");
+        }
         this.#validateDueDate(dueAt);
         book.issueCopy();
 
@@ -733,6 +736,7 @@ export class AdminCatalogueService {
     });
 
     return [...merged]
+      .filter(([, data]) => data.removed !== true)
       .map(
         ([id, data]) =>
           new AdminBook(id, data, inventory.has(id))
@@ -866,6 +870,10 @@ export class AdminCatalogueService {
         snapshot.data()
       );
 
+      if (snapshot.data().removed === true) {
+        throw new Error("This book was removed. Refresh the catalogue.");
+      }
+
       // Use the latest stock inside the transaction.
       book.addCopies(addCopies);
 
@@ -885,6 +893,54 @@ export class AdminCatalogueService {
       transaction.update(ref, changes);
     });
   }
+
+  // Remove catalogue visibility without breaking loan history or returns.
+  async removeBook(profile, book) {
+    const assertSession = () => {
+      if (!(profile instanceof AdminProfile) ||
+          !this.#auth.currentUser?.emailVerified ||
+          this.#auth.currentUser.uid !== profile.id) {
+        throw new Error("Your session changed. Sign in again.");
+      }
+    };
+
+    assertSession();
+    if (!(book instanceof AdminBook)) throw new Error("Select a valid catalogue book.");
+
+    await runTransaction(this.#db, async transaction => {
+      assertSession();
+      const ref = doc(this.#db, "books", book.id);
+      const snapshot = await transaction.get(ref);
+      if (snapshot.exists() && snapshot.data().removed === true) {
+        throw new Error("This book has already been removed. Refresh the catalogue.");
+      }
+
+      const removal = {
+        removed: true,
+        removedAt: serverTimestamp(),
+        removedBy: profile.id
+      };
+
+      if (snapshot.exists()) {
+        // Preserve copies, metadata, references and outstanding loans.
+        transaction.update(ref, removal);
+      } else {
+        if (book.registered) throw new Error("This book no longer exists. Refresh the catalogue.");
+        // Persist a marker for sample books so merging defaults cannot resurrect them.
+        transaction.set(ref, {
+          title: book.title,
+          author: book.author,
+          category: book.category,
+          color: book.color,
+          ink: book.ink,
+          availableCopies: 0,
+          ...removal
+        });
+      }
+    });
+  }
+
+
 }
 
 export class AdminFilterService {
@@ -985,3 +1041,4 @@ export class AdminFilterService {
       });
   }
 }
+

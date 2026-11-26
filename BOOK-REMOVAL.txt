@@ -1,0 +1,35 @@
+BOOKBASE - REMOVE BOOKS
+
+Admin / Manage Books now provides a red Remove book button on every card.
+Confirmation: No, cancel / Yes, remove book.
+Feedback: blue during saving or cancellation; green after Firebase confirms success;
+red on errors. Buttons are disabled while saving and re-enabled after failures.
+
+Removal hides the book from both catalogues, including sample/default books.
+The Firestore document is retained with removed, removedAt and removedBy fields.
+This preserves titles, inventory and borrowing history. Existing issued copies can
+still be returned. Removed books cannot receive new requests or approvals in the
+application. Pending requests remain available for rejection or student cancellation.
+Book IDs remain reserved after removal.
+
+OOP: AdminCatalogueService.removeBook(profile, book), in oop/abstraction.js,
+contains the transaction. It accepts AdminProfile and AdminBook objects.
+Update your UML to include this public method if documenting this version.
+
+INSTALL
+Download this branch ZIP through GitHub. Copy the updated project files into the
+existing repository, keeping its .git folder. Include updated HTML, page JS,
+adminfiles/admin.css and oop/abstraction.js. Prefer reviewing the pull request diff.
+Do not deploy the draft branch until reviewed.
+
+TESTING
+Automated checks use mocked Firebase and do not write to the live database.
+Install Python Playwright and Chromium. From the project root, start:
+  python -m http.server 8773 --bind 127.0.0.1
+In another terminal:
+  python tests/remove-books.browser.py
+The executable path defaults to /usr/bin/chromium. Set BOOKBASE_CHROMIUM to your
+Chromium executable on another operating system. BOOKBASE_TEST_URL overrides the URL.
+
+These checks do not verify your deployed Firestore Rules or live network access.
+The existing admin books-write permission is required for removal, just as for editing.
