@@ -6,8 +6,8 @@
 
   <title>BookBase | Admin</title>
 
-  <link rel="stylesheet" href="./admin.css?v=remove-books-1">
-  <script type="module" src="./admin.js?v=remove-books-1"></script>
+  <link rel="stylesheet" href="./admin.css?v=notifications-1">
+  <script type="module" src="./admin.js?v=notifications-1"></script>
 </head>
 
 <body>
@@ -203,12 +203,14 @@
               <svg class="icon" aria-hidden="true">
                 <use href="#i-bell"/>
               </svg>
+              <span id="notification-count" class="notification-count" aria-hidden="true" hidden>0</span>
             </button>
 
             <div class="dropdown" id="notifications" hidden>
-              <h3>Borrowing updates</h3>
-              <p id="admin-notification-text">Loading requests...</p>
+              <h3>Notifications</h3>
+              <p id="admin-notification-text" class="notification-summary">Loading requests...</p>
               <div id="admin-notification-list"></div>
+              <p class="notification-help">Due-soon reminders start 24 hours before the due time. Opening this panel marks current updates as read.</p>
             </div>
           </div>
 
@@ -426,3 +428,4 @@
   </div>
 </body>
 </html>
+

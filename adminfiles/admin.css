@@ -1004,3 +1004,38 @@ body:has(#loading:not([hidden]):not(:empty)) #page-loader { display: none; }
 }
 .admin-remove-book:hover:not(:disabled) { background: #ffe4e6; border-color: #fda4af; }
 .admin-remove-book:disabled { opacity: .6; cursor: wait; }
+
+
+/* Notification bell, unread count, catalogue updates and return reminders. */
+[data-dropdown="notifications"] { position: relative; overflow: visible; }
+.notification-count {
+  position: absolute; top: -6px; right: -7px;
+  display: grid; place-items: center; min-width: 20px; height: 20px;
+  padding: 0 5px; border: 2px solid #fff; border-radius: 999px;
+  background: #2563eb; color: #fff; font-size: 10px; font-weight: 800; line-height: 1;
+}
+[data-dropdown="notifications"].has-due-soon { color: #92400e; border-color: #fcd34d; }
+[data-dropdown="notifications"].has-due-soon .notification-count { background: #f59e0b; color: #422006; }
+[data-dropdown="notifications"].has-overdue { color: #b91c1c; border-color: #fecaca; }
+[data-dropdown="notifications"].has-overdue .notification-count { background: #b91c1c; color: #fff; }
+#notifications { width: min(370px, calc(100vw - 32px)); max-height: min(640px, 75svh); overflow-y: auto; }
+#notifications .notification-entry {
+  display: block; width: 100%; margin: 0 0 9px; padding: 12px;
+  border: 1px solid #e1e8f2; border-radius: 10px;
+  background: #f8faff; color: #29415e; text-align: left; cursor: pointer;
+}
+#notifications .notification-entry strong,
+#notifications .notification-entry span,
+#notifications .notification-entry small { display: block; overflow-wrap: anywhere; }
+#notifications .notification-entry strong { font-size: 12px; line-height: 1.5; }
+#notifications .notification-entry span { margin-top: 5px; font-size: 12px; line-height: 1.6; color: inherit; }
+#notifications .notification-entry small { margin-top: 7px; font-size: 10px; color: #62728a; }
+#notifications .notice-soon { border-color: #fcd34d; background: #fffbeb; color: #854d0e; }
+#notifications .notice-overdue { border-color: #fecaca; background: #fff1f2; color: #991b1b; }
+#notifications .notification-entry:hover { filter: brightness(.97); }
+#notifications .notification-entry:focus-visible { outline: 3px solid #79a8ff; outline-offset: 2px; }
+.notification-summary, .notification-help { font-size: 11px; line-height: 1.6; color: #62728a; }
+.notification-error { color: #991b1b; font-size: 12px; }
+.loan-card.due-soon-card, .record.record-due-soon { border-color: #fcd34d; background: #fffdf3; }
+.loan-status.due-soon, .badge-due-soon { background: #fef3c7; color: #854d0e; }
+.due-soon-reminder, .loan-card .due-soon-reminder, .record .due-soon-reminder { color: #854d0e; font-weight: 600; }
