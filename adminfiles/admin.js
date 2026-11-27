@@ -1,3 +1,4 @@
+import { NotificationCenter, loanDueState, dueReminderText, notificationTime, updateNotificationBell } from "../oop/notifications.js?v=notifications-1";
 // PAGE ENTRY: Firebase setup, UI events and live data.
 // Open oop/ for the four presentation modules.
 import { AdminRecord, BookCoverPalette } from "../oop/encapsulation.js";
@@ -87,6 +88,7 @@ let version = 0;
 let loggingOut = false;
 let toastTimer = null;
 let overdueSignature = "";
+let notificationCenter = null;
 
 const borrowerProfiles = new Map();
 const profileSubscriptions = new Map();
@@ -823,86 +825,43 @@ function appendBorrowerDetails(details, uid) {
 // =====================================================
 
 function renderNotifications() {
-  const pending = requests.filter(
-    request => request.status === "pending"
-  ).length;
-
-  const overdue = requests.filter(
-    request => isOverdue(request)
-  ).length;
-
-  $("admin-notification-text").textContent =
-    requestsError || (
-      !requestsLoaded
-        ? "Loading requests..."
-        : `${pending} pending requests · ${overdue} overdue books`
-    );
-
   const container = $("admin-notification-list");
+  const panel = $("notifications");
+  const updates = notificationCenter?.getUpdates(
+    requestsLoaded && !requestsError ? requests : [], { titleFor: titleFor, borrowerFor: borrowerName }
+  ) || [];
+  // Opening the bell marks what is currently visible as read, including live arrivals.
+  if (notificationCenter && !panel.hidden) notificationCenter.markRead(updates);
+  updateNotificationBell(notificationCenter, updates,
+    document.querySelector('[data-dropdown="notifications"]'), $("notification-count"));
+  const soon = updates.filter(x => x.severity === "soon").length;
+  const overdue = updates.filter(x => x.severity === "overdue").length;
+  const unread = notificationCenter?.unreadCount(updates) || 0;
+  $("admin-notification-text").textContent = `${unread} unread · ${soon} due soon · ${overdue} overdue`;
   container.replaceChildren();
-
-  if (requestsError || !requestsLoaded) return;
-
-  const recent = [...requests].sort(
-    (a, b) =>
-      Number(isOverdue(b)) - Number(isOverdue(a)) ||
-      eventMillis(b) - eventMillis(a)
-  ).slice(0, 5);
-
-  if (!recent.length) {
-    container.append(node("p", "", "No borrowing updates yet."));
+  if (requestsError || booksError) {
+    container.append(node("p", "notification-error", requestsError || booksError));
   }
-
-  const labels = {
-    pending: "Pending request",
-    approved: "Borrowed",
-    returned: "Returned",
-    rejected: "Rejected",
-    cancelled: "Cancelled by student"
-  };
-
-  for (const request of recent) {
-    const overdue = isOverdue(request);
-
-    const button = node(
-      "button",
-      `notification-item${overdue ? " notification-overdue" : ""}`
-    );
-
+  if (!updates.length) {
+    container.append(node("p", "notification-empty",
+      !requestsLoaded || !booksLoaded ? "Loading updates..." : "No notifications yet."));
+    return;
+  }
+  for (const update of updates) {
+    const button = node("button", `notification-item notification-entry notice-${update.severity}`);
     button.type = "button";
-
-    const label = overdue
-      ? "Overdue"
-      : labels[request.status] || request.status;
-
+    button.dataset.notificationId = update.id;
+    button.dataset.notificationKind = update.kind;
     button.append(
-      node("strong", "", `${label}: ${titleFor(request.bookId)}`),
-      node("span", "", borrowerName(request.studentUid)),
-      node(
-        "span",
-        "",
-        overdue
-          ? `Due: ${dateText(request.dueAt)}`
-          : dateText(
-              request.cancelledAt ||
-              request.returnedAt ||
-              request.reviewedAt ||
-              request.approvedAt ||
-              request.requestedAt
-            )
-      )
+      node("strong", "", update.title),
+      node("span", "", update.body),
+      node("small", "notification-time", update.severity === "info"
+        ? notificationTime(update.createdAt) : "Return reminder")
     );
-
     button.addEventListener("click", () => {
-      setView(
-        request.status === "pending"
-          ? "pending"
-          : request.status === "approved"
-            ? "approved"
-            : "history"
-      );
+      if (update.kind === "book") { setView("books"); }
+      else { setView(update.status === "pending" ? "pending" : update.status === "approved" ? "approved" : "history"); }
     });
-
     container.append(button);
   }
 }
@@ -1049,10 +1008,11 @@ function renderRequests() {
 
   rows.forEach(request => {
     const overdue = isOverdue(request);
+    const dueSoon = loanDueState(request) === "soon";
 
     const card = node(
       "article",
-      `record${overdue ? " record-overdue" : ""}`
+      `record${overdue ? " record-overdue" : dueSoon ? " record-due-soon" : ""}`
     );
 
     const details = node("div", "record-details");
@@ -1104,8 +1064,8 @@ function renderRequests() {
     } else if (request.status === "approved") {
       actions.append(node(
         "span",
-        overdue ? "badge badge-overdue" : "badge badge-approved",
-        overdue ? "Overdue" : "Borrowed"
+        overdue ? "badge badge-overdue" : dueSoon ? "badge badge-due-soon" : "badge badge-approved",
+        overdue ? "Overdue" : dueSoon ? "Due soon" : "Borrowed"
       ));
 
       if (overdue) {
@@ -1115,6 +1075,8 @@ function renderRequests() {
           "Past the due date. Follow up with the borrower for return."
         ));
       }
+
+      if (dueSoon) details.append(node("p", "due-soon-reminder", dueReminderText(request)));
 
       if (request.approvedAt) {
         details.append(node(
@@ -1803,6 +1765,7 @@ document.querySelectorAll("[data-dropdown]").forEach(button => {
     panel.hidden = !open;
 
     button.setAttribute("aria-expanded", String(open));
+    if (button.dataset.dropdown === "notifications" && open) renderNotifications();
   });
 });
 
@@ -1894,6 +1857,8 @@ onAuthStateChanged(auth, async user => {
   );
 
   currentUser = null;
+  notificationCenter = null;
+  updateNotificationBell(null, [], document.querySelector('[data-dropdown="notifications"]'), $("notification-count"));
   currentAdminProfile = null;
   booksQuery = "";
   transactionsQuery = "";
@@ -1948,6 +1913,7 @@ onAuthStateChanged(auth, async user => {
     }
 
     currentUser = user;
+    notificationCenter = new NotificationCenter(user.uid, "admin");
     currentAdminProfile = new AdminProfile(user);
 
     fillProfile(user);
@@ -1968,6 +1934,8 @@ onAuthStateChanged(auth, async user => {
         books = new Map(
           snapshot.docs.map(item => [item.id, item.data()])
         );
+
+        notificationCenter?.updateBooks(books);
 
         refresh();
       },
@@ -2061,10 +2029,10 @@ function updateDashboardClock() {
   const signature = requests
     .filter(request => request.status === "approved")
     .map(request =>
-      `${request.id}:${isOverdue(request, now.getTime())}`
+      `${request.id}:${loanDueState(request, now.getTime())}`
     )
     .sort()
-    .join("|");
+    .join("|") + `:${Math.floor(now.getTime() / 60000)}`;
 
   if (signature !== overdueSignature) {
     overdueSignature = signature;
@@ -2103,5 +2071,14 @@ window.addEventListener("pageshow", startDashboardClock);
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) {
     updateDashboardClock();
+  }
+});
+
+
+// Keep read tracking in sync between tabs for this account only.
+window.addEventListener("storage", event => {
+  if (notificationCenter && event.key === notificationCenter.storageKey) {
+    notificationCenter.reload();
+    renderNotifications();
   }
 });

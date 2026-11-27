@@ -6,8 +6,8 @@
 
   <title>BookBase | Student Library</title>
 
-  <link rel="stylesheet" href="./student.css?v=remove-books-1">
-  <script type="module" src="./student.js?v=remove-books-1"></script>
+  <link rel="stylesheet" href="./student.css?v=notifications-1">
+  <script type="module" src="./student.js?v=notifications-1"></script>
 </head>
 
 <body>
@@ -259,14 +259,17 @@
               <svg class="icon" aria-hidden="true">
                 <use href="#i-bell"/>
               </svg>
+              <span id="notification-count" class="notification-count" aria-hidden="true" hidden>0</span>
             </button>
 
             <div class="dropdown" id="notifications" hidden>
-              <h3>Borrowing updates</h3>
+              <h3>Notifications</h3>
 
+              <p id="student-notification-text" class="notification-summary">Loading updates...</p>
               <div id="notification-list">
                 <p>Loading updates...</p>
               </div>
+              <p class="notification-help">Due-soon reminders start 24 hours before the due time. Opening this panel marks current updates as read.</p>
             </div>
           </div>
 
@@ -411,3 +414,4 @@
   </div>
 </body>
 </html>
+

@@ -1,0 +1,49 @@
+BOOKBASE NOTIFICATION INDICATORS AND RETURN REMINDERS
+
+STUDENT AND ADMIN
+- Bell badge shows unread updates. It is hidden when there are none.
+- New books, edited details, changed stock and catalogue removals create alerts.
+- Borrowing status changes appear in the same dropdown.
+- Amber Due soon reminders start 24 hours before an approved loan is due.
+- Red Overdue reminders appear at the due time and stay until the loan is returned.
+- The bell keeps its amber/red warning color while there are active reminders,
+  even after the unread badge has been cleared.
+- Opening the dropdown marks the current list as read. New updates that arrive
+  while the dropdown is open are treated as read because they are visible there.
+- Read state is saved separately for each account and role in this browser.
+- On a new browser, the first book snapshot is the starting baseline, so it does
+  not create alerts for every existing book. Later catalogue changes are tracked.
+- When browser storage is blocked, notifications work in memory for that visit.
+- Due times are displayed in Philippine time (PHT).
+- Return reminders also appear on the active borrowed-book cards.
+
+These are in-app reminders while the dashboard is open. They do not send push
+notifications or emails when the browser is closed. No new Firebase collections,
+permissions or database writes are introduced by notification tracking.
+
+FILES
+student.html / student.css / student.js
+adminfiles/admin.html / adminfiles/admin.css / adminfiles/admin.js
+oop/notifications.js
+Copy all seven application files if updating an existing local project.
+The other oop modules and existing Firebase configuration stay in place.
+
+OOP / UML
+NotificationCenter is a new application class in oop/notifications.js. It uses
+private storage/state fields and exposes updateBooks(), getUpdates(),
+isUnread(), unreadCount(), markRead(), reload() and a storageKey getter.
+The page entry modules create one NotificationCenter per signed-in account.
+loanDueState(), dueReminderText(), notificationTime() and updateNotificationBell()
+are helper functions, not additional classes. The shared service is used by both
+student and administrator pages. Include the new class when updating the UML.
+
+TESTS
+Run Node checks from the repository root:
+  node --test tests/notifications.test.mjs
+Browser checks require Python Playwright and Chromium. Start a local server:
+  python -m http.server 8776 --bind 127.0.0.1
+In another terminal:
+  python tests/notifications.browser.py
+Set BOOKBASE_CHROMIUM to a different Chromium executable if needed.
+Set BOOKBASE_TEST_URL to use another local test URL.
+The browser test uses mocked Firebase, never live accounts or database writes.
