@@ -2,7 +2,7 @@
 // Open oop/ for the four presentation modules.
 import { LibraryUser, PasswordPolicy, LoginController } from "./oop/encapsulation.js";
 import { Student, Librarian } from "./oop/inheritance.js";
-import { LoginService } from "./oop/abstraction.js?v=remove-books-1";
+import { LoginService } from "./oop/abstraction.js?v=student-return-1";
 export { LibraryUser, Student, Librarian, PasswordPolicy, LoginService, LoginController };
 
 import { initializeApp } from
@@ -62,3 +62,4 @@ new LoginController(
     getFirestore(app)
   )
 ).start();
+

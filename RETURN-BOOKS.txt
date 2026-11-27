@@ -1,0 +1,65 @@
+BOOKBASE - STUDENT RETURN BOOK
+
+FLOW
+1. Student opens My Borrowed Books and selects Return book on an approved loan.
+2. Confirmation explains that the physical book must be handed to the librarian.
+3. Cancel leaves the loan unchanged. Confirm sends a return request.
+4. Green feedback appears after the write succeeds. The card shows Return requested
+   with a timestamp and a disabled request button to prevent duplicates.
+5. Admin receives an unread Return requested notification. The loan card includes
+   the student's request timestamp and a Confirm return? action.
+6. After the librarian receives the book and confirms, the transaction becomes
+   Returned, exactly one available copy is restored, and the borrowing lock is removed.
+7. Student history and notifications update through the existing realtime listeners.
+
+The student request DOES NOT increase stock, change the due date, remove the lock,
+or mark the loan Returned. Due-soon/overdue reminders remain until confirmation.
+Only a verified student owning an approved active loan may request its return.
+Books removed from the catalogue may still complete their existing return flow.
+
+REQUIRED FIREBASE RULES STEP
+The JavaScript alone is not enough if the deployed rules only allow students to
+cancel pending requests. Before using this feature:
+
+1. Open Firebase Console > Firestore Database > Rules.
+2. Find the existing match /borrowRequests/{requestId} block.
+3. Add the allow-update statement from firebase/student-return.rules.snippet INSIDE
+   that block. Keep the existing admin/cancellation rules and all other collections.
+4. Click Publish.
+
+The snippet uses the verified() helper from the last rules you shared. If your
+current rules have a different helper, adapt the snippet to the current rules.
+Do not replace unrelated rules blindly.
+
+firebase/firestore.rules is an emulator-tested REFERENCE built from the last full
+rules supplied in this conversation plus the narrowly scoped return rule. Compare
+it with the deployed rules before replacing an entire ruleset. The snippet allows
+ONLY returnRequestedAt (server time) and returnRequestedBy (the owner UID) to be
+added to an approved loan with its existing lock unchanged.
+
+No live Firebase Rules or database data were changed by this update. Publishing
+rules is a separate action from pushing the website files to GitHub.
+
+INSTALL
+Copy the updated entry JavaScript, HTML, CSS and oop modules into the existing
+project folder, keeping .git and existing assets. Push every changed file. Do not
+omit oop/abstraction.js or oop/notifications.js.
+Suggested commit: Add student return requests with librarian confirmation
+
+OOP / UML
+BorrowingService gains the public async method requestReturn(user, requestId),
+in oop/abstraction.js. No new application classes are added; the count stays 21.
+NotificationCenter also displays pending return requests to both roles. Add the
+new public method to BorrowingService in your UML for this version.
+
+TESTS
+- node --test tests/notifications.test.mjs
+- Start a local server from the project root: python -m http.server 8780
+- With Python Playwright and Chromium installed: python tests/student-return.browser.py
+  BOOKBASE_TEST_URL and BOOKBASE_CHROMIUM override the default test URL/executable.
+- Security Rules tests: cd tests/rules, run npm install, then npm test.
+  Requires Java and Node. Tests use ONLY the local demo-bookbase emulator.
+
+The supplied tests verify confirmation/cancellation, success/error messages,
+duplicate prevention, unchanged stock until admin confirmation, real-time UI
+updates, notification cleanup, and unauthorized/tampered Rules writes.

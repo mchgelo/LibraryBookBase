@@ -1,0 +1,34 @@
+// Add this allow-update rule INSIDE your existing
+// match /borrowRequests/{requestId} block.
+// Keep your existing admin and pending-cancellation rules.
+// Uses the verified() helper from the previously shared BookBase rules.
+allow update: if verified()
+  && resource.data.studentUid == request.auth.uid
+  && resource.data.status == 'approved'
+  && request.resource.data.status == 'approved'
+  && !resource.data.keys().hasAny(['returnRequestedAt', 'returnRequestedBy'])
+  && request.resource.data.keys().hasAll(['returnRequestedAt', 'returnRequestedBy'])
+  && request.resource.data.returnRequestedBy == request.auth.uid
+  && request.resource.data.returnRequestedAt == request.time
+  && request.resource.data.diff(resource.data).affectedKeys()
+    .hasOnly(['returnRequestedAt', 'returnRequestedBy'])
+  && exists(
+    /databases/$(database)/documents/borrowLocks/$(request.auth.uid + '_' + resource.data.bookId)
+  )
+  && get(
+    /databases/$(database)/documents/borrowLocks/$(request.auth.uid + '_' + resource.data.bookId)
+  ).data.requestId == requestId
+  && get(
+    /databases/$(database)/documents/borrowLocks/$(request.auth.uid + '_' + resource.data.bookId)
+  ).data.studentUid == request.auth.uid
+  && get(
+    /databases/$(database)/documents/borrowLocks/$(request.auth.uid + '_' + resource.data.bookId)
+  ).data.bookId == resource.data.bookId
+  && existsAfter(
+    /databases/$(database)/documents/borrowLocks/$(request.auth.uid + '_' + resource.data.bookId)
+  )
+  && getAfter(
+    /databases/$(database)/documents/borrowLocks/$(request.auth.uid + '_' + resource.data.bookId)
+  ).data == get(
+    /databases/$(database)/documents/borrowLocks/$(request.auth.uid + '_' + resource.data.bookId)
+  ).data;

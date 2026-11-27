@@ -1,0 +1,241 @@
+// REFERENCE: last user-shared rules plus student-return permission.
+// Merge the supplied snippet into current deployed rules if they differ.
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function verified() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && !exists(
+          /databases/$(database)/documents/deletedAccounts/$(request.auth.uid)
+        );
+    }
+
+    function admin() {
+      return verified()
+        && exists(
+          /databases/$(database)/documents/roles/$(request.auth.uid)
+        )
+        && get(
+          /databases/$(database)/documents/roles/$(request.auth.uid)
+        ).data.role == 'admin';
+    }
+
+    function completeProfile() {
+      let profile = get(
+        /databases/$(database)/documents/users/$(request.auth.uid)
+      ).data;
+
+      return profile.fullName is string
+        && profile.fullName.size() > 0
+        && profile.studentId is string
+        && profile.studentId.size() > 0
+        && profile.course is string
+        && profile.course.size() > 0;
+    }
+
+    function available(bookId) {
+      return bookId is string
+        && bookId.matches('[a-zA-Z0-9-]+')
+        && exists(
+          /databases/$(database)/documents/books/$(bookId)
+        )
+        && get(
+          /databases/$(database)/documents/books/$(bookId)
+        ).data.availableCopies is int
+        && get(
+          /databases/$(database)/documents/books/$(bookId)
+        ).data.availableCopies > 0;
+    }
+
+    function validProfile(data) {
+      return data.keys().hasAll([
+          'fullName', 'studentId', 'course', 'email', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'fullName', 'studentId', 'course', 'email', 'updatedAt'
+        ])
+        && data.fullName is string
+        && data.fullName.size() > 0
+        && data.fullName.size() <= 100
+        && data.studentId is string
+        && data.studentId.size() > 0
+        && data.studentId.size() <= 40
+        && data.course is string
+        && data.course.size() > 0
+        && data.course.size() <= 100
+        && data.email == request.auth.token.email
+        && data.updatedAt == request.time;
+    }
+
+    match /roles/{uid} {
+      allow read: if request.auth != null
+        && request.auth.uid == uid;
+
+      allow write: if false;
+    }
+
+    match /users/{uid} {
+      allow read: if verified()
+        && (
+          request.auth.uid == uid
+          || admin()
+        );
+
+      allow create, update: if verified()
+        && request.auth.uid == uid
+        && validProfile(request.resource.data);
+
+      allow delete: if false;
+    }
+
+    match /books/{bookId} {
+      allow read: if verified();
+      allow write: if admin();
+    }
+
+    match /borrowRequests/{requestId} {
+      allow read: if verified()
+        && (
+          admin()
+          || resource.data.studentUid == request.auth.uid
+        );
+
+      allow create: if verified()
+        && completeProfile()
+        && request.resource.data.keys().hasAll([
+          'studentUid', 'bookId', 'status', 'requestedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'studentUid', 'bookId', 'status', 'requestedAt'
+        ])
+        && request.resource.data.studentUid == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.requestedAt == request.time
+        && available(request.resource.data.bookId)
+        && !exists(
+          /databases/$(database)/documents/borrowLocks/$(request.auth.uid + '_' + request.resource.data.bookId)
+        )
+        && getAfter(
+          /databases/$(database)/documents/borrowLocks/$(request.auth.uid + '_' + request.resource.data.bookId)
+        ).data.requestId == requestId
+        && getAfter(
+          /databases/$(database)/documents/borrowLocks/$(request.auth.uid + '_' + request.resource.data.bookId)
+        ).data.studentUid == request.auth.uid;
+
+      allow update: if admin() || (
+        verified()
+        && resource.data.studentUid == request.auth.uid
+        && resource.data.status == 'pending'
+        && request.resource.data.status == 'cancelled'
+        && request.resource.data.cancelledAt == request.time
+        && request.resource.data.diff(resource.data)
+          .affectedKeys().hasOnly(['status', 'cancelledAt'])
+        && get(
+          /databases/$(database)/documents/borrowLocks/$(request.auth.uid + '_' + resource.data.bookId)
+        ).data.requestId == requestId
+        && !existsAfter(
+          /databases/$(database)/documents/borrowLocks/$(request.auth.uid + '_' + resource.data.bookId)
+        )
+      );
+
+
+      // Add this allow-update rule INSIDE your existing
+      // match /borrowRequests/{requestId} block.
+      // Keep your existing admin and pending-cancellation rules.
+      // Uses the verified() helper from the previously shared BookBase rules.
+      allow update: if verified()
+        && resource.data.studentUid == request.auth.uid
+        && resource.data.status == 'approved'
+        && request.resource.data.status == 'approved'
+        && !resource.data.keys().hasAny(['returnRequestedAt', 'returnRequestedBy'])
+        && request.resource.data.keys().hasAll(['returnRequestedAt', 'returnRequestedBy'])
+        && request.resource.data.returnRequestedBy == request.auth.uid
+        && request.resource.data.returnRequestedAt == request.time
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['returnRequestedAt', 'returnRequestedBy'])
+        && exists(
+          /databases/$(database)/documents/borrowLocks/$(request.auth.uid + '_' + resource.data.bookId)
+        )
+        && get(
+          /databases/$(database)/documents/borrowLocks/$(request.auth.uid + '_' + resource.data.bookId)
+        ).data.requestId == requestId
+        && get(
+          /databases/$(database)/documents/borrowLocks/$(request.auth.uid + '_' + resource.data.bookId)
+        ).data.studentUid == request.auth.uid
+        && get(
+          /databases/$(database)/documents/borrowLocks/$(request.auth.uid + '_' + resource.data.bookId)
+        ).data.bookId == resource.data.bookId
+        && existsAfter(
+          /databases/$(database)/documents/borrowLocks/$(request.auth.uid + '_' + resource.data.bookId)
+        )
+        && getAfter(
+          /databases/$(database)/documents/borrowLocks/$(request.auth.uid + '_' + resource.data.bookId)
+        ).data == get(
+          /databases/$(database)/documents/borrowLocks/$(request.auth.uid + '_' + resource.data.bookId)
+        ).data;
+
+      allow delete: if admin();
+    }
+
+    match /borrowLocks/{lockId} {
+      allow get: if verified()
+        && (
+          admin()
+          || lockId.matches(
+            request.auth.uid + '_[a-zA-Z0-9-]+'
+          )
+        );
+
+      allow list: if admin();
+
+      allow create: if verified()
+        && completeProfile()
+        && request.resource.data.keys().hasAll([
+          'studentUid', 'bookId', 'requestId'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'studentUid', 'bookId', 'requestId'
+        ])
+        && request.resource.data.studentUid == request.auth.uid
+        && request.resource.data.requestId is string
+        && lockId ==
+          request.auth.uid + '_' + request.resource.data.bookId
+        && available(request.resource.data.bookId)
+        && !exists(
+          /databases/$(database)/documents/borrowRequests/$(request.resource.data.requestId)
+        )
+        && getAfter(
+          /databases/$(database)/documents/borrowRequests/$(request.resource.data.requestId)
+        ).data.studentUid == request.auth.uid
+        && getAfter(
+          /databases/$(database)/documents/borrowRequests/$(request.resource.data.requestId)
+        ).data.bookId == request.resource.data.bookId
+        && getAfter(
+          /databases/$(database)/documents/borrowRequests/$(request.resource.data.requestId)
+        ).data.status == 'pending';
+
+      allow update: if admin();
+
+      allow delete: if admin() || (
+        verified()
+        && resource.data.studentUid == request.auth.uid
+        && lockId ==
+          request.auth.uid + '_' + resource.data.bookId
+        && get(
+          /databases/$(database)/documents/borrowRequests/$(resource.data.requestId)
+        ).data.studentUid == request.auth.uid
+        && get(
+          /databases/$(database)/documents/borrowRequests/$(resource.data.requestId)
+        ).data.bookId == resource.data.bookId
+        && get(
+          /databases/$(database)/documents/borrowRequests/$(resource.data.requestId)
+        ).data.status == 'pending'
+        && getAfter(
+          /databases/$(database)/documents/borrowRequests/$(resource.data.requestId)
+        ).data.status == 'cancelled'
+      );
+    }
+  }
+}

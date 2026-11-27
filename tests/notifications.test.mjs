@@ -74,3 +74,22 @@ test('entering the 24-hour window creates a new unread reminder without changing
  const before=c.getUpdates([req],opts);assert.equal(before[0].severity,'info');c.markRead(before);
  const upcoming=c.getUpdates([req],{...opts,now:now+60000});assert.equal(upcoming[0].severity,'soon');assert.equal(c.unreadCount(upcoming),1);
 });
+
+test('return requests notify admin and student and clear after confirmed return',()=>{
+ for(const role of ['student','admin']){
+  const c=new NotificationCenter('u',role,memory());
+  const request=loan({dueAt:ts(now+2*DUE_SOON_MS),returnRequestedBy:'u',returnRequestedAt:ts(now)});
+  const updates=c.getUpdates([request],{...opts,borrowerFor:()=> 'Student'});
+  assert.equal(updates.length,1);assert.match(updates[0].title,role==='admin'?/Return requested/:/Return request sent/);
+  c.markRead(updates);
+  const timestampAck=c.getUpdates([{...request,returnRequestedAt:ts(now+1)}],opts);
+  assert.equal(c.unreadCount(timestampAck),0);
+  const returned=c.getUpdates([{...request,status:'returned',returnedAt:ts(now+2)}],opts);
+  assert.equal(returned.length,1);assert.match(returned[0].title,/Returned/);assert.equal(c.unreadCount(returned),1);
+ }
+});
+test('a pending return request does not suppress an overdue warning',()=>{
+ const c=new NotificationCenter('u','admin',memory());
+ const updates=c.getUpdates([loan({dueAt:ts(now-1),returnRequestedBy:'u',returnRequestedAt:ts(now)})],opts);
+ assert.equal(updates.length,2);assert.equal(updates[0].severity,'overdue');assert(updates.some(x=>x.id==='return-request:loan'));
+});
