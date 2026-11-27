@@ -1,9 +1,9 @@
-import { NotificationCenter, loanDueState, dueReminderText, notificationTime, updateNotificationBell } from "./oop/notifications.js?v=notifications-1";
+import { NotificationCenter, loanDueState, dueReminderText, notificationTime, updateNotificationBell } from "./oop/notifications.js?v=student-return-1";
 // PAGE ENTRY: Firebase setup, UI events and live data.
 // Open oop/ for the four presentation modules.
 import { LibraryRecord } from "./oop/encapsulation.js";
 import { Book, StudentProfile } from "./oop/inheritance.js";
-import { CatalogueService, StudentProfileService, BorrowingService } from "./oop/abstraction.js?v=remove-books-1";
+import { CatalogueService, StudentProfileService, BorrowingService } from "./oop/abstraction.js?v=student-return-1";
 import { recordSummary } from "./oop/polymorphism.js";
 export { LibraryRecord, Book, StudentProfile, CatalogueService, StudentProfileService, BorrowingService };
 
@@ -167,6 +167,7 @@ let notificationCenter = null;
 
 const sending = new Set();
 const cancelling = new Set();
+const returning = new Set();
 
 
 // =====================================================
@@ -1552,6 +1553,50 @@ async function cancelPendingRequest(request) {
 
 
 // =====================================================
+// STUDENT RETURN REQUEST - librarian confirmation is still required.
+// =====================================================
+
+async function requestStudentReturn(request) {
+  if (!currentUser || returning.has(request.id) || activeDialog?.open) return;
+  const user = currentUser;
+  const version = sessionVersion;
+  returning.add(request.id);
+  renderBorrowing();
+
+  try {
+    const confirmed = await confirmAction(
+      "Return this book?",
+      "Send a return request, then hand the book to the librarian. It will be marked Returned only after the librarian confirms receipt.",
+      "Yes, request return",
+      { title: bookTitle(request.bookId), author: `Due: ${formatDate(request.dueAt, true)}` }
+    );
+    if (version !== sessionVersion || auth.currentUser?.uid !== user.uid) return;
+    if (!confirmed) {
+      studentMessage("Return request cancelled. Your loan is unchanged.", false, "info");
+      return;
+    }
+    studentMessage("Sending your return request...", false, "info");
+    await borrowingService.requestReturn(user, request.id);
+    if (version === sessionVersion) studentMessage(
+      "Return request sent successfully. Please hand the book to the librarian for confirmation."
+    );
+  } catch (error) {
+    if (version === sessionVersion) studentMessage(
+      error.code === "permission-denied"
+        ? "Unable to request a return. Please contact the librarian for assistance."
+        : error.code
+          ? "Unable to send the return request. Check your connection and try again."
+          : error.message,
+      true
+    );
+  } finally {
+    returning.delete(request.id);
+    if (version === sessionVersion) refreshDataViews();
+  }
+}
+
+
+// =====================================================
 // CATALOGUE AND CATEGORY SEARCH
 // =====================================================
 
@@ -1790,6 +1835,12 @@ function renderBorrowing() {
         );
       }
       if (dueSoon) info.append(element("p", "due-soon-reminder", dueReminderText(request)));
+      if (request.returnRequestedBy || request.returnRequestedAt) {
+        info.append(
+          element("p", "return-request-note", "Return requested — waiting for the librarian to confirm receipt."),
+          element("p", "request-timestamp", `Return requested: ${formatDate(request.returnRequestedAt, true)}`)
+        );
+      }
     } else if (request.status === "returned") {
       info.append(
         element(
@@ -1847,6 +1898,16 @@ function renderBorrowing() {
             : request.status
       )
     );
+
+    if (request.status === "approved") {
+      const requested = Boolean(request.returnRequestedBy || request.returnRequestedAt);
+      const button = element("button", "return-book-button",
+        requested ? "Return requested" : returning.has(request.id) ? "Please wait..." : "Return book");
+      button.type = "button";
+      button.disabled = requested || returning.has(request.id) || Boolean(requestsError) || !requestsReady;
+      button.addEventListener("click", () => requestStudentReturn(request));
+      actions.append(button);
+    }
 
     if (request.status === "pending") {
       const cancel = element(
@@ -2226,6 +2287,7 @@ onAuthStateChanged(auth, async (user) => {
 
   sending.clear();
   cancelling.clear();
+  returning.clear();
   overdueSignature = "";
 
   catalogueReady = false;
@@ -2453,3 +2515,4 @@ window.addEventListener("storage", event => {
     renderNotifications();
   }
 });
+

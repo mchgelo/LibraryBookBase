@@ -134,6 +134,18 @@ export class NotificationCenter {
       const title = titleFor(request.bookId);
       const borrower = this.#role === "admin" ? borrowerFor(request.studentUid) : "";
       const prefix = borrower ? `Borrower: ${borrower}. ` : "";
+      const returnRequested = request.status === "approved" && Boolean(request.returnRequestedBy || request.returnRequestedAt);
+      if (returnRequested) {
+        updates.push({
+          id: `return-request:${request.id}`, kind: "request", requestId: request.id,
+          status: request.status, bookId: request.bookId, severity: "info",
+          title: `${this.#role === "admin" ? "Return requested" : "Return request sent"}: ${title}`,
+          body: prefix + (this.#role === "admin"
+            ? "Confirm receipt after the student hands the physical book to the library."
+            : "Waiting for the librarian to confirm receipt. Your loan remains active until confirmed."),
+          createdAt: millis(request.returnRequestedAt) || millis(request.approvedAt)
+        });
+      }
       if (state !== "none") {
         updates.push({
           id: `reminder:${request.id}:${due}:${state}`, kind: "request", requestId: request.id,
@@ -142,7 +154,7 @@ export class NotificationCenter {
           body: prefix + dueReminderText(request, now) + ` Due ${notificationTime(due)}.`,
           createdAt: due
         });
-      } else {
+      } else if (!returnRequested) {
         const createdAt = millis(request.cancelledAt) || millis(request.returnedAt) ||
           millis(request.reviewedAt) || millis(request.approvedAt) || millis(request.requestedAt);
         updates.push({
@@ -183,3 +195,4 @@ export function updateNotificationBell(center, updates, button, badge) {
   button.setAttribute("aria-label", `Notifications, ${unread} unread updates, ${soon} due soon, ${overdue} overdue`);
   button.title = `${unread} unread updates · ${soon} due soon · ${overdue} overdue`;
 }
+

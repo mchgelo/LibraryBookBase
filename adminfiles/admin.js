@@ -1,9 +1,9 @@
-import { NotificationCenter, loanDueState, dueReminderText, notificationTime, updateNotificationBell } from "../oop/notifications.js?v=notifications-1";
+import { NotificationCenter, loanDueState, dueReminderText, notificationTime, updateNotificationBell } from "../oop/notifications.js?v=student-return-1";
 // PAGE ENTRY: Firebase setup, UI events and live data.
 // Open oop/ for the four presentation modules.
 import { AdminRecord, BookCoverPalette } from "../oop/encapsulation.js";
 import { AdminProfile, AdminBook } from "../oop/inheritance.js";
-import { AdminProfileService, AdminBorrowingService, AdminCatalogueService, AdminFilterService } from "../oop/abstraction.js?v=remove-books-1";
+import { AdminProfileService, AdminBorrowingService, AdminCatalogueService, AdminFilterService } from "../oop/abstraction.js?v=student-return-1";
 import { recordSummary } from "../oop/polymorphism.js";
 export { AdminRecord, AdminProfile, AdminBook, BookCoverPalette, AdminProfileService, AdminBorrowingService, AdminCatalogueService, AdminFilterService };
 
@@ -1062,6 +1062,13 @@ function renderRequests() {
         actionButton("Reject", "danger", request, "reject")
       );
     } else if (request.status === "approved") {
+      if (request.returnRequestedBy || request.returnRequestedAt) {
+        details.append(
+          node("p", "return-request-note", "Student requested a return. Confirm only after receiving the physical book."),
+          node("p", "request-timestamp", `Return requested: ${dateText(request.returnRequestedAt)}`)
+        );
+        actions.append(node("span", "badge badge-return-request", "Return requested"));
+      }
       actions.append(node(
         "span",
         overdue ? "badge badge-overdue" : dueSoon ? "badge badge-due-soon" : "badge badge-approved",
@@ -1093,7 +1100,7 @@ function renderRequests() {
       ));
 
       actions.append(
-        actionButton("Mark Returned?", "secondary", request, "return")
+        actionButton(request.returnRequestedBy || request.returnRequestedAt ? "Confirm return?" : "Mark Returned?", "secondary", request, "return")
       );
     } else {
       if (request.status === "returned") {
@@ -2082,3 +2089,4 @@ window.addEventListener("storage", event => {
     renderNotifications();
   }
 });
+

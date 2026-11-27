@@ -499,6 +499,39 @@ export class BorrowingService {
       transaction.delete(lockRef);
     });
   }
+
+  // A student requests a return; only the librarian confirms the physical copy.
+  async requestReturn(user, requestId) {
+    this.#assertSession(user);
+    if (typeof requestId !== "string" || !requestId || requestId.includes("/")) {
+      throw new Error("Select a valid borrowed-book record.");
+    }
+
+    await runTransaction(this.#db, async transaction => {
+      this.#assertSession(user);
+      const ref = doc(this.#db, "borrowRequests", requestId);
+      const snapshot = await transaction.get(ref);
+      if (!snapshot.exists()) throw new Error("This borrowing record no longer exists.");
+      const data = snapshot.data();
+      if (data.studentUid !== user.uid) throw new Error("You can only return your own borrowed books.");
+      if (data.status !== "approved") throw new Error("Only an issued book can be requested for return.");
+      if (data.returnRequestedBy || data.returnRequestedAt) throw new Error("A return request is already waiting for librarian confirmation.");
+
+      const lockRef = doc(this.#db, "borrowLocks", `${user.uid}_${data.bookId}`);
+      const lock = await transaction.get(lockRef);
+      if (!lock.exists() || lock.data().requestId !== requestId ||
+          lock.data().studentUid !== user.uid || lock.data().bookId !== data.bookId) {
+        throw new Error("The borrowing record needs checking. Please contact the librarian.");
+      }
+      this.#assertSession(user);
+      transaction.update(ref, {
+        returnRequestedAt: serverTimestamp(),
+        returnRequestedBy: user.uid
+      });
+      // Keep status, due date, stock and the active lock unchanged until confirmation.
+    });
+  }
+
 }
 
 export class AdminProfileService {
@@ -1041,4 +1074,5 @@ export class AdminFilterService {
       });
   }
 }
+
 
